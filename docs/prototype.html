@@ -36,8 +36,7 @@
 
   nav{ position:relative; display:grid; grid-template-columns:repeat(5,1fr);
        background:var(--sunken); border:1px solid var(--line); border-radius:10px; padding:4px; }
-  .thumb{ position:absolute; top:4px; left:4px; height:calc(100% - 8px);
-          width:calc((100% - 8px)/5); background:var(--surface); border-radius:7px;
+  .thumb{ position:absolute; top:4px; left:4px; background:var(--surface); border-radius:7px;
           box-shadow:0 1px 2px rgba(0,0,0,.12); transition:transform 220ms var(--ease-out); z-index:0; }
   nav button{ position:relative; z-index:1; appearance:none; background:none; border:0;
     padding:.5rem .125rem; font-family:"JetBrains Mono",monospace; font-size:.75rem;
@@ -60,11 +59,12 @@
   .mode{ margin-left:auto; flex:none; font-family:"JetBrains Mono",monospace;
          font-size:.6875rem; letter-spacing:.06em; color:var(--t-dim); text-transform:uppercase; }
 
-  #screen{ height:36rem; overflow-y:auto; padding:.75rem 0;
+  #screen{ height:36rem; overflow:auto; -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain; padding:.75rem 0;
     font-family:"JetBrains Mono", ui-monospace, monospace; font-size:12.5px; line-height:1.5;
     color:var(--t-fg); font-variant-ligatures:none; font-feature-settings:"liga" 0,"calt" 0;
     font-variant-numeric:tabular-nums; }
-  .ln{ white-space:pre; padding:0 1rem; min-height:1.5em; }
+  .ln{ white-space:pre; padding:0 1rem; min-height:1.5em; width:max-content; min-width:100%; }
   .ok{color:var(--t-ok)} .warn{color:var(--t-warn)} .crit{color:var(--t-crit)}
   .acc{color:var(--t-acc)} .dim{color:var(--t-dim)} .b{font-weight:700}
   .sp{ display:inline-block; width:1ch; color:var(--t-acc); }
@@ -83,9 +83,14 @@
           color:var(--muted); max-width:64ch; }
   footer b{ color:var(--fg); font-weight:600; }
   @media (max-width:52rem){
+    .wrap{ padding:1.75rem .75rem 3rem; gap:1.25rem; }
+    h1{ font-size:1.75rem; }
+    .lede{ font-size:.9375rem; }
     nav{ grid-template-columns:repeat(3,1fr); }
-    .thumb{ width:calc((100% - 8px)/3); }
-    #screen{ height:30rem; font-size:11px; }
+    #screen{ height:28rem; font-size:11px; }   /* дальше подгоняется скриптом под 78 колонок */
+    .ln{ padding:0 .625rem; }
+    .notes{ gap:1rem; }
+    .wide{ display:none; }
   }
   @media (prefers-reduced-motion: reduce){ .thumb,.notes{ transition:none; } }
 </style>
@@ -94,7 +99,7 @@
   <header>
     <div class="eyebrow">Прототип интерфейса</div>
     <h1>gitlab-upgrade</h1>
-    <p class="lede">Все экраны инструмента, включая те, что видно только когда всё пошло не так. Тайминги настоящие: спиннер тикает на 80&nbsp;мс, проверки появляются в том темпе, в котором выполняются.</p>
+    <p class="lede">Все экраны инструмента, включая те, что видно только когда всё пошло не так.<span class="wide"> Тайминги настоящие: спиннер тикает на 80&nbsp;мс, проверки появляются в том темпе, в котором выполняются.</span></p>
   </header>
 
   <nav role="tablist" aria-label="Экраны">
@@ -570,7 +575,7 @@ const SCREENS={
 };
 
 let cur=null;
-function redraw(){ screen.innerHTML=''; SCREENS[cur].init(); }
+function redraw(){ screen.innerHTML=''; SCREENS[cur].init(); fitScreen(); }
 function show(k){
   clearTimers(); screen.innerHTML=''; api={};
   const s=SCREENS[k];
@@ -579,17 +584,37 @@ function show(k){
     setTimeout(()=>{ notesEl.innerHTML=s.notes.map(n=>'<div class="note"><h3>'+n[0]+'</h3><p>'+n[1]+'</p></div>').join('');
       notesEl.classList.remove('swap'); },180); }
   tabs.forEach(t=>t.setAttribute('aria-selected',String(t.dataset.s===k)));
-  cur=k; place(); s.init();
+  cur=k; place(); s.init(); fitScreen();
 }
+/* на узком экране 78 колонок не влезают в 11px — считаем размер, при котором влезут */
+function fitScreen(){
+  screen.style.fontSize='';
+  if(!window.matchMedia('(max-width: 52rem)').matches) return;
+  const probe=document.createElement('div');
+  probe.className='ln';
+  probe.style.cssText='position:absolute;visibility:hidden;pointer-events:none';
+  probe.textContent='0'.repeat(W);
+  screen.appendChild(probe);
+  const cs=getComputedStyle(probe);
+  const padX=parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight);
+  const need=probe.getBoundingClientRect().width;
+  probe.remove();
+  const avail=screen.clientWidth-1;
+  if(need<=avail) return;
+  const base=parseFloat(getComputedStyle(screen).fontSize);
+  screen.style.fontSize=Math.max(6,base*(avail-padX)/(need-padX)).toFixed(2)+'px';
+}
+
 function place(){
   const idx=tabs.findIndex(t=>t.dataset.s===cur);
   const cols=window.matchMedia('(max-width: 52rem)').matches?3:5;
   const rows=Math.ceil(tabs.length/cols);
-  thumb.style.transform='translateX('+(idx%cols)*100+'%)';
-  thumb.style.top='calc(4px + '+Math.floor(idx/cols)+' * (100% - 8px) / '+rows+')';
+  thumb.style.width='calc((100% - 8px) / '+cols+')';
+  thumb.style.height='calc((100% - 8px) / '+rows+')';
+  thumb.style.transform='translate('+(idx%cols)*100+'%, '+Math.floor(idx/cols)*100+'%)';
 }
 tabs.forEach(t=>t.addEventListener('click',()=>show(t.dataset.s)));
-window.addEventListener('resize',()=>cur&&place());
+window.addEventListener('resize',()=>{ if(cur){ place(); fitScreen(); } });
 document.addEventListener('keydown',e=>{
   if(/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)||e.metaKey||e.ctrlKey||e.altKey) return;
   if(e.key==='ArrowUp'&&api.nav){ e.preventDefault(); api.nav(-1); }
