@@ -148,9 +148,9 @@
 
 <nav class="proto-picker" data-position="top" aria-label="Prototype variants">
   <span class="proto-picker-highlight" aria-hidden="true"></span>
-  <button class="proto-picker-item" data-active aria-current="true">Панель</button>
-  <button class="proto-picker-item">Лента</button>
-  <button class="proto-picker-item">Табло</button>
+  <button class="proto-picker-item" data-active aria-current="true">Шапка</button>
+  <button class="proto-picker-item">Строка</button>
+  <button class="proto-picker-item">Веха</button>
   <span class="proto-picker-divider" aria-hidden="true"></span>
   <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
 </nav>
@@ -173,12 +173,10 @@ function every(ms, fn){ const id = setInterval(fn, ms); timers.push(id); return 
 const W = 78;
 const len = s => [...s.replace(/<[^>]*>/g, '')].length;
 const pad = (s, n) => s + ' '.repeat(Math.max(0, n - len(s)));
-const two = (l, r) => pad(l, Math.max(len(l) + 1, W - len(r))) + r;
 const spin = () => '<span class="sp">' + FRAMES[fi] + '</span>';
 const clock = s => String(Math.floor(s/3600)).padStart(2,'0') + ':' +
                    String(Math.floor(s/60)%60).padStart(2,'0') + ':' +
                    String(s%60).padStart(2,'0');
-const bar = (done, total, w) => '█'.repeat(Math.round(w*done/total)) + '░'.repeat(w - Math.round(w*done/total));
 
 let sink = stage;
 function row(html, cls){
@@ -215,122 +213,64 @@ function play(skip, hooks){
   A(9600, () => hooks.migrations());
 }
 
-/* ═══════════ ВАРИАНТ 1 · Панель ═══════════ */
-/* ось: максимальная плотность, фиксированный кадр, всё видно одновременно */
-function variantPanel(skip){
-  clearTimers();
-  requestAnimationFrame(() => {
-    stage.innerHTML = ''; sink = stage;
-    skip = skip || 0;
+/* ═══════════ Три ленты, расходящиеся по месту таймлайна ═══════════ */
+/* Общее для всех: история прокручивается, живёт только закреплённая строка. */
 
-    const hdr = row(); row();
-    row(' ' + CHAIN.map((_, i) =>
-      (i < 2 ? '<span class="ok">●</span>' : i === 2 ? '<span class="acc">◐</span>' : '<span class="dim">○</span>') +
-      (i < 5 ? '<span class="dim">────────</span>' : '')).join(''));
-    row(' <span class="dim">' + CHAIN.map(v => pad(v, 9)).join('') + '</span>');
-    row(' <span class="dim">' + pad('41 мин', 9) + pad('38 мин', 9) + '</span><span class="acc">сейчас</span>');
-    row();
-    const stepHdr = row();
-    const R = {}; PHASES.forEach(p => R[p.k] = row());
-    row();
-    const logHdr = row();
-    let logs = [row(), row(), row(), row()];
-    row(undefined, 'grow');
-    const b1 = row(), b2 = row();
-    const extra = [row(), row(), row(), row(), row(), row()];
+const DONE = 2;                       /* шаги 1-2 позади, идёт 3-й */
+function chainFull(){
+  const marks = ' ' + CHAIN.map((_, i) =>
+    (i < DONE ? '<span class="ok">●</span>'
+     : i === DONE ? '<span class="acc">◐</span>'
+     : '<span class="dim">○</span>') +
+    (i < 5 ? '<span class="dim">────────</span>' : '')).join('');
+  const labels = ' <span class="dim">' + CHAIN.map(v => pad(v, 9)).join('') + '</span>';
+  return [marks, labels];
+}
+const chainMini = () => CHAIN.map((_, i) =>
+  i < DONE ? '<span class="ok">●</span>'
+  : i === DONE ? '<span class="acc">◐</span>'
+  : '<span class="dim">○</span>').join('');
 
-    const S = { step: 4, danger: false, remaining: 52, dialog: false };
+const HISTORY = [
+  [' <span class="dim">13:31:20</span>  <span class="b">шаг 1/6</span>  <span class="dim">16.3.9-ee</span>',
+   '   <span class="ok">✓</span> бэкап полный              <span class="dim">187 ГБ · 79 мин</span>',
+   '   <span class="ok">✓</span> установка пакета          <span class="dim">из кэша · 7 мин</span>',
+   '   <span class="ok">✓</span> фоновые миграции          <span class="dim">132 → 0 · 41 мин</span>',
+   ' <span class="dim">15:38:47</span>  <span class="ok">шаг 1/6 готово за 02:07:27</span>'],
+  [' <span class="dim">15:38:48</span>  <span class="b">шаг 2/6</span>  <span class="dim">16.7.10-ee</span>',
+   '   <span class="ok">✓</span> бэкап быстрый             <span class="dim">1.9 ГБ · 3 мин</span>',
+   '   <span class="ok">✓</span> установка пакета          <span class="dim">из кэша · 5 мин</span>',
+   '   <span class="ok">✓</span> фоновые миграции          <span class="dim">88 → 0 · 30 мин</span>',
+   ' <span class="dim">16:19:55</span>  <span class="ok">шаг 2/6 готово за 00:41:07</span>'],
+  [' <span class="dim">16:19:56</span>  <span class="b">шаг 3/6</span>  <span class="dim">16.11.10-ee</span>']
+];
 
-    const paintHdr = () => {
-      hdr.innerHTML = two(' <span class="b">GitLab Upgrade</span> <span class="dim">· 15.11.13-ee → 17.11.6-ee</span>',
-                          '<span class="dim">шаг 3 из 6 · ' + clock(OVERALL + S.step) + '</span>');
-      stepHdr.innerHTML = two(' <span class="b">Шаг 3</span> <span class="dim">· 16.11.10-ee</span>',
-                              '<span class="dim">' + clock(S.step) + '</span>');
-    };
-    const paintBar = () => {
-      if (S.dialog) return;
-      if (S.danger){
-        b1.innerHTML = ' <span class="crit">Ctrl-C сейчас опасен:</span> <span class="dim">идёт dpkg. Прерывание оставит пакет в битом состоянии.</span>';
-        b2.innerHTML = ' <span class="dim">[l] журнал   </span><span class="acc">[d] отсоединиться — процесс продолжит работу</span>';
-      } else {
-        b1.innerHTML = ' <span class="ok">Ctrl-C сейчас безопасен:</span> <span class="dim">миграции идут внутри GitLab.</span>';
-        b2.innerHTML = ' <span class="dim">[l] журнал   [d] отсоединиться   [Ctrl-C] прекратить наблюдение</span>';
-      }
-    };
-    paintHdr(); paintBar();
-    every(1000, () => { S.step++; paintHdr(); });
-
-    play(skip, {
-      start(p){
-        S.step = p.base;
-        if (p.danger){ S.danger = true; paintBar(); }
-        R[p.k].innerHTML = '   ' + spin() + ' ' + pad(p.label, 27) + '<span class="dim">…</span>';
-        paintHdr();
-      },
-      done(p){
-        S.step = p.done;
-        R[p.k].innerHTML = '   <span class="ok">✓</span> ' + pad(p.label, 27) + '<span class="dim">' + p.val + '</span>';
-        if (p.danger){ S.danger = false; paintBar(); }
-        paintHdr();
-      },
-      migrations(){
-        logHdr.innerHTML = two(' <span class="b">Журнал</span>', '<span class="dim">[l] свернуть</span>');
-        const paint = () => R.mig.innerHTML = '   ' + spin() + ' ' + pad('фоновые миграции', 27) +
-          '<span class="dim">осталось </span><span class="b">' + S.remaining +
-          '</span><span class="dim"> · −8 за 10 мин · ~' + Math.round(S.remaining/0.8) + ' мин</span>';
-        paint();
-        const pool = ['BackfillCiPipelineVariables       готово', 'осталось 51',
-                      'BackfillProjectStatistics         23%',   'BackfillProjectStatistics         61%',
-                      'BackfillProjectStatistics         готово','осталось 50'];
-        let li = 0, t0 = 14*3600 + 53*60 + 2;
-        const push = () => {
-          const el = document.createElement('div');
-          el.className = 'ln';
-          el.innerHTML = '   <span class="dim">' + clock(t0) + '  ' + pool[li++ % pool.length] + '</span>';
-          stage.insertBefore(el, logs[logs.length-1].nextSibling);
-          logs.shift().remove(); logs.push(el); t0 += 39;
-        };
-        push(); push(); push(); push();   // журнал не показывается полупустым
-        every(1300, push);
-        every(2300, () => { S.remaining = Math.max(1, S.remaining - 1); paint(); });
-      }
-    });
-
-    api = {
-      jump: () => variantPanel(3700),
-      interrupt(){
-        if (!S.danger){
-          clearTimers(); stage.innerHTML = ''; sink = stage;
-          row(); row(' <span class="dim">^C</span>');
-          row(' <span class="ok">Отсоединились. Апгрейд продолжается.</span>'); row();
-          row(' <span class="dim">Подключиться снова:</span>');
-          row('   <span class="acc">sudo gitlab-upgrade attach</span>');
-          return;
-        }
-        S.dialog = true;
-        b1.innerHTML = ' <span class="crit">⛔ Сейчас идёт установка пакета (dpkg).</span>';
-        b2.innerHTML = '    <span class="dim">Прерывание может оставить систему в состоянии, из которого</span>';
-        [ '    <span class="dim">придётся выходить руками: dpkg --configure -a</span>', '',
-          '    <span class="acc">[d]              отсоединиться, апгрейд продолжится</span>',
-          '    <span class="dim">[Ctrl-C ещё раз] всё равно прервать</span>',
-          '    <span class="dim">[любая клавиша]  вернуться</span>', ''
-        ].forEach((t, i) => extra[i].innerHTML = t);
-        at(3600, () => { S.dialog = false; extra.forEach(e => e.innerHTML = ''); paintBar(); });
-      }
-    };
-  });
-  return '';
+/* веха: путь печатается в саму ленту на границе шагов */
+function milestone(doneCount){
+  const marks = CHAIN.map((_, i) =>
+    (i < doneCount ? '<span class="ok">●</span>'
+     : i === doneCount ? '<span class="acc">◐</span>'
+     : '<span class="dim">○</span>') +
+    (i < 5 ? '<span class="dim">────────</span>' : '')).join('');
+  return ['',
+          ' ' + marks + '   <span class="dim">шаг ' + (doneCount + 1) + ' из 6</span>',
+          ' <span class="dim">' + CHAIN.map(v => pad(v, 9)).join('') + '</span>',
+          ''];
 }
 
-/* ═══════════ ВАРИАНТ 2 · Лента ═══════════ */
-/* ось: история первична — поток с прокруткой, живая только закреплённая строка */
-function variantStream(skip){
+function buildStream(mode, skip){
   clearTimers();
   requestAnimationFrame(() => {
     stage.innerHTML = '';
     skip = skip || 0;
 
-    /* лента прокручивается, закреплённая строка держится за последнюю строку кадра */
+    /* «Шапка»: путь закреплён сверху и не прокручивается */
+    if (mode === 'header'){
+      sink = stage;
+      chainFull().forEach(t => row(t));
+      row('<span class="dim">' + '─'.repeat(W) + '</span>');
+    }
+
     const feed = document.createElement('div'); feed.className = 'feed';
     const rule = document.createElement('div'); rule.className = 'ln';
     const pin  = document.createElement('div'); pin.className  = 'ln';
@@ -338,19 +278,11 @@ function variantStream(skip){
     stage.append(feed, rule, pin);
     sink = feed;
 
-    /* прошлые шаги остаются в скроллбэке — в этом весь смысл направления */
-    [' <span class="dim">13:31:20</span>  <span class="b">шаг 1/6</span>  <span class="dim">16.3.9-ee</span>',
-     '   <span class="ok">✓</span> бэкап полный              <span class="dim">187 ГБ · 79 мин</span>',
-     '   <span class="ok">✓</span> установка пакета          <span class="dim">из кэша · 7 мин</span>',
-     '   <span class="ok">✓</span> фоновые миграции          <span class="dim">132 → 0 · 41 мин</span>',
-     ' <span class="dim">15:38:47</span>  <span class="ok">шаг 1/6 готово за 02:07:27</span>', '',
-     ' <span class="dim">15:38:48</span>  <span class="b">шаг 2/6</span>  <span class="dim">16.7.10-ee</span>',
-     '   <span class="ok">✓</span> бэкап быстрый             <span class="dim">1.9 ГБ · 3 мин</span>',
-     '   <span class="ok">✓</span> установка пакета          <span class="dim">из кэша · 5 мин</span>',
-     '   <span class="ok">✓</span> фоновые миграции          <span class="dim">88 → 0 · 30 мин</span>',
-     ' <span class="dim">16:19:55</span>  <span class="ok">шаг 2/6 готово за 00:41:07</span>', '',
-     ' <span class="dim">16:19:56</span>  <span class="b">шаг 3/6</span>  <span class="dim">16.11.10-ee</span>'
-    ].forEach(t => row(t));
+    HISTORY.forEach((block, i) => {
+      if (mode === 'milestone' && i > 0) milestone(i).forEach(t => row(t));
+      else if (i > 0) row('');
+      block.forEach(t => row(t));
+    });
 
     const S = { step: 4, danger: false, remaining: 52, phase: '', phaseLabel: '' };
     const emit = html => { row(html); feed.scrollTop = feed.scrollHeight; };
@@ -360,8 +292,14 @@ function variantStream(skip){
         ? '<span class="crit">Ctrl-C опасен · dpkg</span>'
         : '<span class="ok">Ctrl-C безопасен</span>';
       const mid = S.phase === 'mig' ? 'миграции ' + S.remaining : S.phaseLabel;
-      pin.innerHTML = ' <span class="b">шаг 3/6</span> <span class="dim">· ' + clock(OVERALL + S.step) +
-                      ' · ' + mid + ' · </span>' + state;
+      if (mode === 'line'){
+        /* всё состояние, включая путь, в одной закреплённой строке */
+        pin.innerHTML = ' ' + chainMini() + '  <span class="b">шаг 3/6</span>  <span class="dim">' +
+                        clock(OVERALL + S.step) + '  ' + mid + '  ·  </span>' + state;
+      } else {
+        pin.innerHTML = ' <span class="b">шаг 3/6</span> <span class="dim">· ' + clock(OVERALL + S.step) +
+                        ' · ' + mid + ' · </span>' + state;
+      }
     };
     paintPin();
     every(1000, () => { S.step++; paintPin(); });
@@ -371,7 +309,7 @@ function variantStream(skip){
       start(p){
         S.step = p.base; S.phase = p.k; S.phaseLabel = p.label;
         if (p.danger) S.danger = true;
-        if (p.k === 'mig') { paintPin(); return; }   // живую строку миграций ставит migrations()
+        if (p.k === 'mig'){ paintPin(); return; }
         live = row('   ' + spin() + ' ' + pad(p.label, 26) + '<span class="dim">…</span>');
         feed.scrollTop = feed.scrollHeight;
         paintPin();
@@ -393,7 +331,6 @@ function variantStream(skip){
                       'BackfillMergeRequestDiffs         8%'];
         let li = 0, t0 = 14*3600 + 53*60 + 2;
         every(1500, () => {
-          /* живая строка миграций всегда остаётся последней в ленте */
           feed.insertBefore(Object.assign(document.createElement('div'),
             { className:'ln', innerHTML:'     <span class="dim">' + clock(t0) + '  ' + pool[li++ % pool.length] + '</span>' }), mig);
           t0 += 39;
@@ -410,7 +347,7 @@ function variantStream(skip){
     });
 
     api = {
-      jump: () => variantStream(3700),
+      jump: () => buildStream(mode, 3700),
       interrupt(){
         if (!S.danger){
           clearTimers();
@@ -434,104 +371,12 @@ function variantStream(skip){
   return '';
 }
 
-/* ═══════════ ВАРИАНТ 3 · Табло ═══════════ */
-/* ось: минимум внимания — один факт крупно, остальное по клавише */
-function variantBoard(skip){
-  clearTimers();
-  requestAnimationFrame(() => {
-    stage.innerHTML = ''; sink = stage;
-    skip = skip || 0;
-
-    row(); row();
-    row('      <span class="dim">GitLab</span>  <span class="b">15.11.13</span>  <span class="dim">→</span>  <span class="b">17.11.6</span>');
-    row(); row();
-    const prog = row();
-    row(); row();
-    const act = row(), actGap = row(), d1 = row(), d2 = row();
-    row(); row(); row();
-    const safe = row();
-    const dlg = [row(), row(), row(), row(), row(), row(), row()];
-    row(undefined, 'grow');
-    const foot = row();
-
-    const S = { step: 4, danger: false, remaining: 52, dialog: false };
-
-    const paint = () => {
-      const filled = Math.round(44 * 2 / 6);
-      prog.innerHTML = '      <span class="acc">' + '█'.repeat(filled) + '</span>' +
-                       '<span class="dim">' + '░'.repeat(44 - filled) + '</span>' +
-                       '   <span class="dim">шаг 3 из 6</span>';
-      foot.innerHTML = two('      <span class="dim">[l] журнал  [p] путь  [d] отсоединиться</span>',
-                           '<span class="dim">прошло ' + clock(OVERALL + S.step) + '</span>   ');
-    };
-    const paintSafe = () => {
-      if (S.dialog) return;
-      safe.innerHTML = S.danger
-        ? '      <span class="crit">⛔  Ctrl-C сейчас опасен — идёт dpkg</span>'
-        : '      <span class="ok">✓  Ctrl-C сейчас безопасен</span>';
-    };
-    paint(); paintSafe();
-    every(1000, () => { S.step++; paint(); });
-
-    play(skip, {
-      start(p){
-        S.step = p.base;
-        if (p.danger){ S.danger = true; paintSafe(); }
-        act.innerHTML = '      ' + spin() + '  <span class="b">' + p.label + '</span> <span class="dim">16.11.10-ee</span>';
-        d1.innerHTML = ''; d2.innerHTML = '';
-        paint();
-      },
-      done(p){
-        S.step = p.done;
-        if (p.danger){ S.danger = false; paintSafe(); }
-        paint();
-      },
-      migrations(){
-        const upd = () => {
-          act.innerHTML = '      ' + spin() + '  <span class="b">фоновые миграции</span> <span class="dim">16.11.10-ee</span>';
-          d1.innerHTML  = '         <span class="dim">осталось </span><span class="b">' + S.remaining +
-                          '</span><span class="dim"> миграций, −8 за 10 минут</span>';
-          d2.innerHTML  = '         <span class="dim">примерно ещё ' + Math.round(S.remaining/0.8) + ' минут</span>';
-        };
-        upd();
-        every(2300, () => { S.remaining = Math.max(1, S.remaining - 1); upd(); });
-      }
-    });
-
-    api = {
-      jump: () => variantBoard(3700),
-      interrupt(){
-        if (!S.danger){
-          clearTimers(); stage.innerHTML = ''; sink = stage;
-          row(); row(); row();
-          row('      <span class="dim">^C</span>');
-          row('      <span class="ok">Отсоединились. Апгрейд продолжается.</span>');
-          row(); row();
-          row('      <span class="dim">Подключиться снова:</span>');
-          row('      <span class="acc">sudo gitlab-upgrade attach</span>');
-          return;
-        }
-        S.dialog = true;
-        act.innerHTML = ''; d1.innerHTML = ''; d2.innerHTML = '';
-        safe.innerHTML = '      <span class="crit b">⛔  ИДЁТ УСТАНОВКА ПАКЕТА</span>';
-        [ '', '      <span class="dim">Прерывание сейчас оставит dpkg в незавершённой транзакции.</span>',
-          '      <span class="dim">Выходить придётся руками: dpkg --configure -a</span>', '',
-          '      <span class="acc">[d]               отсоединиться, апгрейд продолжится</span>',
-          '      <span class="dim">[Ctrl-C ещё раз]  всё равно прервать</span>', ''
-        ].forEach((t, i) => dlg[i].innerHTML = t);
-        at(3600, () => {
-          S.dialog = false; dlg.forEach(e => e.innerHTML = '');
-          paintSafe();
-          act.innerHTML = '      ' + spin() + '  <span class="b">установка пакета</span> <span class="dim">16.11.10-ee</span>';
-        });
-      }
-    };
-  });
-  return '';
-}
+const variantHeader    = () => buildStream('header');
+const variantLine      = () => buildStream('line');
+const variantMilestone = () => buildStream('milestone');
 
 /* ═══════════ пикер ═══════════ */
-const variants = [variantPanel, variantStream, variantBoard];
+const variants = [variantHeader, variantLine, variantMilestone];
 
 const picker = document.querySelector('.proto-picker');
 const highlight = picker.querySelector('.proto-picker-highlight');
