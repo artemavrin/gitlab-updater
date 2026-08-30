@@ -50,6 +50,14 @@ jobs:
           echo "check → $code: $out"
           test "$code" -eq 1
           case "$out" in *GitLab*) ;; *) echo "нет понятного сообщения"; exit 1 ;; esac
+          # В редиректе Ink не должен подниматься: `run > log.txt` обязан дать
+          # лог, а не мусор из перерисовок. Ищем управляющие последовательности.
+          set +e
+          node gitlab-upgrade.mjs run --yes > /tmp/run.log 2>&1
+          set -e
+          if grep -qP '\x1b\[' /tmp/run.log; then
+            echo "в перенаправленном выводе есть ANSI:"; cat -v /tmp/run.log; exit 1
+          fi
 
       - name: Контракт машинного интерфейса
         # Каталог и конверт — публичный контракт для агентов: ломать его молча нельзя.

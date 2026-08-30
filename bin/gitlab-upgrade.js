@@ -7,7 +7,8 @@ import { ok, fail, serialize } from '../src/cli/envelope.js';
 import { createTranslator, resolveLocale } from '../src/i18n/index.js';
 import { createExec, MODE } from '../src/core/exec.js';
 import { EventBus } from '../src/core/events.js';
-import { createJsonRenderer } from '../src/render/plain.js';
+import { createJsonRenderer, createPlainRenderer, createAttachRenderer } from '../src/render/plain.js';
+import { inkAvailable } from '../src/ui/available.js';
 import { commandCheck } from '../src/commands/check.js';
 import { commandPlan } from '../src/commands/plan.js';
 import { commandRefreshPath } from '../src/commands/refreshPath.js';
@@ -44,6 +45,21 @@ const RUNNERS = {
 };
 
 const MUTATING = new Set(['run', 'resume']);
+
+/**
+ * Экраны подключаются динамически. В бандле они лежат рядом, а при запуске
+ * из исходников Node не умеет .jsx — и тогда работает построчный вывод.
+ * Апгрейд на шесть часов не должен падать из-за формы вывода.
+ */
+async function loadUi() {
+  try {
+    return await import('../src/ui/render.jsx');
+  } catch (err) {
+    if (err.code === 'ERR_UNKNOWN_FILE_EXTENSION') return null;
+    throw err;
+  }
+}
+
 const runStamp = () => {
   const [date, time] = new Date().toISOString().split('T');
   return `${date.replaceAll('-', '')}-${time.slice(0, 8).replaceAll(':', '')}`;
@@ -160,12 +176,29 @@ async function main(argv) {
   ctx.os = detectOs(ctx.osPath);
   ctx.gitlabInfo = await detectGitlab(exec).catch(() => null);
 
-  if (command === 'attach') ctx.render = (e) => process.stdout.write(formatEvent(e) + '\n');
+  if (command === 'attach') {
+    // --events отдаёт сырое событие для разбора полётов, обычный вызов —
+    // тот же текст, что видел бы человек у работающего апгрейда.
+    ctx.render = flags.events
+      ? (e) => process.stdout.write(formatEvent(e) + '\n')
+      : createAttachRenderer({ t, secrets });
+  }
+
+  // Экран включается только там, где он есть. Иначе — построчный вывод на том
+  // же потоке событий: `run > log.txt` должен давать лог, а не перерисовки.
+  let screen = null;
+  if (MUTATING.has(command)) {
+    const ui = inkAvailable({ flags }) ? await loadUi() : null;
+    if (ui) screen = ui.mountRun({ bus, t, flags });
+    else if (!flags.json) bus.on(createPlainRenderer({ t, secrets }));
+  }
 
   let result;
   try {
     result = await RUNNERS[command](ctx);
   } finally {
+    // Экран гасим до печати итога: иначе <Static> допишет кадр поверх него.
+    await screen?.stop();
     if (confPath) removeAptConf(confPath);
     await notifier?.pending();
   }

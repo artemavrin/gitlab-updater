@@ -8,10 +8,11 @@
   "engines": { "node": ">=20" },
   "files": ["bin", "src", "data"],
   "scripts": {
-    "test": "node --test test/*.test.js",
+    "test": "node --import ./scripts/jsx-loader.mjs --test test/*.test.js test/*.test.jsx",
     "lint": "node scripts/lint.mjs",
     "build": "node scripts/build.mjs",
     "check": "npm run lint && npm test"
   },
-  "devDependencies": { "esbuild": "^0.25.0" }
+  "dependencies": { "ink": "^6.8.0", "react": "^19.2.8" },
+  "devDependencies": { "esbuild": "^0.25.0", "ink-testing-library": "^4.0.0" }
 }

@@ -145,7 +145,13 @@ export async function commandRun(ctx, { resuming = false } = {}) {
     };
 
     const runStarted = Date.now();
-    bus?.emit({ t: 'run:start', steps: state.steps.length, profile, resuming, from: state.from, target: state.target });
+    // Версии оставшихся шагов едут в событии: иначе экран пути знает только
+    // пройденное и молчит о том, сколько ещё впереди.
+    bus?.emit({
+      t: 'run:start', steps: state.steps.length, profile, resuming,
+      from: state.from, target: state.target,
+      versions: state.steps.map((x) => x.version),
+    });
 
     // Прошлый успешный запуск оставил apt-mark hold; без снятия apt-get install
     // падает уже после того, как бэкап сделан.
@@ -158,6 +164,7 @@ export async function commandRun(ctx, { resuming = false } = {}) {
 
     for (let i = state.stepIndex; i < state.steps.length; i++) {
       const step = state.steps[i];
+      const stepStarted = Date.now();
       bus?.emit({ t: 'step:start', index: i + 1, of: state.steps.length, version: step.version });
 
       // Первый бэкап полный, дальше дешёвые: апгрейд меняет базу и код,
@@ -203,7 +210,12 @@ export async function commandRun(ctx, { resuming = false } = {}) {
       state.stepIndex = i + 1;
       state.phase = 'done-step';
       persist(state);
-      bus?.emit({ t: 'step:done', index: i + 1, of: state.steps.length, version: step.version });
+      // Длительность шага едет в событии, а не считается в каждом рендерере:
+      // иначе экран, лог и уведомление назовут три разных числа.
+      bus?.emit({
+        t: 'step:done', index: i + 1, of: state.steps.length,
+        version: step.version, durationMs: Date.now() - stepStarted,
+      });
     }
 
     if (!dry) await exec(holdArgv(pkg));

@@ -28,11 +28,14 @@ const warnings = [];
 
 // 2. Пользовательский текст живёт только в локалях.
 //    Строго — там, где формируется вывод; предупреждением — в тексте исключений.
-const STRICT = ['src/commands', 'src/render', 'src/plan', 'src/detect'];
+const STRICT = ['src/commands', 'src/render', 'src/plan', 'src/detect', 'src/ui'];
 const LOOSE = ['src/core', 'src/net', 'src/cli'];
 const CYRILLIC = /[Ѐ-ӿ]/;
 
-for (const file of walk('src').filter((f) => extname(f) === '.js')) {
+// .jsx проверяется наравне с .js: экраны — самое место для забытой строки.
+const SOURCES = (f) => ['.js', '.jsx'].includes(extname(f));
+
+for (const file of walk('src').filter(SOURCES)) {
   if (file.startsWith('src/i18n')) continue;
   const bad = stringLiterals(stripComments(readFileSync(file, 'utf8'))).filter((s) => CYRILLIC.test(s));
   if (!bad.length) continue;
@@ -41,7 +44,7 @@ for (const file of walk('src').filter((f) => extname(f) === '.js')) {
 }
 
 // 3. Ни один внешний вызов не должен идти мимо src/core/exec.js
-for (const file of walk('src').filter((f) => extname(f) === '.js')) {
+for (const file of walk('src').filter(SOURCES)) {
   if (file === 'src/core/exec.js') continue;
   const src = stripComments(readFileSync(file, 'utf8'));
   if (/\b(execSync|spawnSync|child_process)\b/.test(src)) {
