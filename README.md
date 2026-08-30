@@ -49,6 +49,31 @@ sudo gitlab-upgrade --lang en plan
 | `30` | a new major is available |
 | `1` | error — repository unreachable, version undetectable |
 
+### The next release, and why
+
+`plan` shows the whole path; when scripting you usually want the one version to install right now.
+
+```bash
+$ gitlab-upgrade next
+
+ 17.1.8-ee.0
+ conditional stop - taken to be safe · 4 more step(s) after it
+
+   [Conditional stop](…gitlab_17_changes…#long-running-pipeline-messages-data-change). Not required by all instances.
+
+   https://docs.gitlab.com/update/versions/gitlab_17_changes/
+```
+
+The justification comes from GitLab's own `upgrade_path.yml`, not from our judgement: `reason`, the `stop` it corresponds to, whether it is `conditional`, the upstream `note` verbatim, a link to the official notes for that major series, and `source` plus `verifiedAt` so the answer is auditable.
+
+For scripts, `--quiet` prints only the version:
+
+```bash
+v=$(sudo gitlab-upgrade next --quiet) && [ -n "$v" ] && sudo apt-get install "gitlab-ee=$v"
+```
+
+Exit codes differ from `check` on purpose: `check` describes the whole gap to the target, `next` the size of the immediate step. From 16.3 the next step is 16.7 — a minor hop — even though the full path is a major upgrade.
+
 ## Behind a proxy
 
 There is no direct route to `packages.gitlab.com` in many closed networks. Point the tool at an HTTP or SOCKS5 proxy and it configures **only that host** — your internal Ubuntu mirror keeps working directly.

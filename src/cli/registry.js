@@ -22,6 +22,7 @@ export const FLAGS = {
   'proxy-all-apt':   { type: 'boolean', group: GROUP.NETWORK },
 
   lang:              { type: 'string',  group: GROUP.OUTPUT,  value: 'lang', choices: ['ru', 'en'] },
+  quiet:             { type: 'boolean', group: GROUP.OUTPUT,  short: 'q' },
   json:              { type: 'boolean', group: GROUP.OUTPUT },
   events:            { type: 'boolean', group: GROUP.OUTPUT },
   plain:             { type: 'boolean', group: GROUP.OUTPUT },
@@ -50,6 +51,19 @@ export const COMMANDS = {
     exits: { [EXIT.CURRENT]: 'current', [EXIT.PATCH]: 'patch', [EXIT.MINOR]: 'minor', [EXIT.MAJOR]: 'major', [EXIT.ERROR]: 'error' },
     // Только типы: описание полей живёт в локалях под ключом result.<команда>.<поле>
     result: { current: 'string', target: 'string|null', updateKind: 'string|null', profile: 'string', steps: 'number' },
+  },
+  next: {
+    mutating: false,
+    requiresRoot: true,
+    flags: [...TARGETING, ...NETWORKING, ...COMMON, 'quiet'],
+    // У check код описывает весь разрыв до цели, у next — размер ближайшего шага.
+    // С 16.3 следующий шаг 16.7 — минорный, хотя весь путь мажорный.
+    exits: { [EXIT.CURRENT]: 'step-current', [EXIT.PATCH]: 'step-patch', [EXIT.MINOR]: 'step-minor', [EXIT.MAJOR]: 'step-major', [EXIT.ERROR]: 'error' },
+    result: {
+      version: 'string|null', current: 'string', remaining: 'number', final: 'boolean',
+      reason: 'string|null', stop: 'string|null', conditional: 'boolean',
+      note: 'string|null', docs: 'string|null', source: 'string', verifiedAt: 'string',
+    },
   },
   plan: {
     mutating: false,

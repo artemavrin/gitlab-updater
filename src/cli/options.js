@@ -33,6 +33,7 @@ export function parseCli(argv, { t } = {}) {
       proxyCa: values['proxy-ca'] ?? null,
       proxyAllApt: values['proxy-all-apt'],
       lang: values.lang ?? null,
+      quiet: values.quiet,
       json: values.json,
       events: values.events,
       plain: values.plain,

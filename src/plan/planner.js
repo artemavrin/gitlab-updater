@@ -64,16 +64,20 @@ export function buildPlan({ current, available, stops, osMax = null, targetMajor
   }
 
   const steps = [];
-  const push = (v, reason) => {
+  // Каждый шаг несёт не только версию, но и обоснование из официального файла:
+  // какой это стоп, что про него сказано и условный ли он.
+  const push = (v, reason, extra = {}) => {
     if (compareVersions(v, cur) <= 0) return;
     if (compareVersions(v, top.v) > 0) return;
     if (steps.some((s) => compareVersions(s, v) === 0)) return;
-    steps.push({ ...v, reason });
+    steps.push({ ...v, reason, stop: null, note: null, conditional: false, ...extra });
   };
 
   // Требование GitLab, которое чаще всего забывают: сперва последний патч своей минорной.
   const ownLatest = latestPatchOf(sorted, cur.major, cur.minor);
-  if (ownLatest && compareVersions(ownLatest, cur) > 0) push(ownLatest, 'latest-patch-of-current-minor');
+  if (ownLatest && compareVersions(ownLatest, cur) > 0) {
+    push(ownLatest, 'latest-patch-of-current-minor', { stop: minorOf(cur) });
+  }
 
   for (const entry of stops) {
     const stop = typeof entry === 'string' ? entry : entry.version;
@@ -85,11 +89,12 @@ export function buildPlan({ current, available, stops, osMax = null, targetMajor
     const patch = latestPatchOf(sorted, s.major, s.minor);
     // Условная остановка нужна не каждому инстансу, но определить это надёжно
     // мы не можем. Лишний шаг стоит времени, пропущенный — целостности данных.
-    if (patch) push(patch, conditional ? 'conditional-stop' : 'required-stop');
+    const note = typeof entry === 'object' ? (entry.note ?? null) : null;
+    if (patch) push(patch, conditional ? 'conditional-stop' : 'required-stop', { stop: minorOf(s), note, conditional });
     else if (!conditional) findings.push({ id: 'missing-stop-package', level: 'critical', stop: minorOf(s) });
   }
 
-  push(top.v, top.reason === 'latest-available' ? 'target' : top.reason);
+  push(top.v, top.reason === 'latest-available' ? 'target' : top.reason, { stop: minorOf(top.v) });
   steps.sort(compareVersions);
 
   return {
@@ -116,6 +121,9 @@ export function policyFor(profile) {
 
 /** Коды возврата команды `check` — контракт для крона и мониторинга. */
 export const EXIT = { CURRENT: 0, ERROR: 1, PATCH: 10, MINOR: 20, MAJOR: 30 };
+
+/** Официальные заметки к мажорной серии. Канонический адрес проверен: /ee/…html редиректит сюда. */
+export const changesDocUrl = (major) => `https://docs.gitlab.com/update/versions/gitlab_${major}_changes/`;
 
 export function exitCodeFor(current, target) {
   if (!target || compareVersions(target, current) <= 0) return EXIT.CURRENT;
