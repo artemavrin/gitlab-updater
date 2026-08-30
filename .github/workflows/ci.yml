@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Нижняя граница из engines и текущая LTS: на серверах встречаются обе.
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Линт
+        run: npm run lint
+
+      - name: Тесты
+        run: npm test
+
+      - name: Сборка одного файла
+        run: npm run build
+
+      - name: Проверка бандла на чистом окружении
+        # Бандл обязан работать без node_modules — именно так он попадёт на сервер.
+        run: |
+          mkdir -p /tmp/smoke && cp dist/gitlab-upgrade.mjs /tmp/smoke/
+          cd /tmp/smoke
+          node gitlab-upgrade.mjs --version
+          node gitlab-upgrade.mjs --lang en help > /dev/null
+          node gitlab-upgrade.mjs --lang ru help > /dev/null
+          # GitLab на раннере нет: ожидаем понятную ошибку и код 1, а не падение
+          set +e
+          out=$(node gitlab-upgrade.mjs check 2>&1); code=$?
+          set -e
+          echo "check → $code: $out"
+          test "$code" -eq 1
+          case "$out" in *GitLab*) ;; *) echo "нет понятного сообщения"; exit 1 ;; esac

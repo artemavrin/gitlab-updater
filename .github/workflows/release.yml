@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег для релиза, например v0.1.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+      - name: Версия в теге должна совпадать с package.json
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          pkg="v$(node -p "require('./package.json').version")"
+          echo "тег $tag, package.json $pkg"
+          test "$tag" = "$pkg"
+
+      - name: Сборка
+        run: npm run build
+
+      - name: Архив с исходниками для запуска без сборки
+        run: |
+          tar --transform 's,^,gitlab-upgrade/,' \
+              -czf dist/gitlab-upgrade-src.tar.gz bin src data package.json README.md LICENSE
+          ( cd dist && sha256sum gitlab-upgrade-src.tar.gz > gitlab-upgrade-src.tar.gz.sha256 )
+
+      - name: Публикация релиза
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          draft: false
+          generate_release_notes: true
+          body: |
+            ## Установка
+
+            Один файл, без `npm install` и без `node_modules`. Нужен только Node ≥ 20.
+
+            ```bash
+            curl -fsSLO https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}/gitlab-upgrade.mjs
+            curl -fsSLO https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}/gitlab-upgrade.mjs.sha256
+            sha256sum -c gitlab-upgrade.mjs.sha256
+            sudo install -m 0755 gitlab-upgrade.mjs /usr/local/bin/gitlab-upgrade
+            gitlab-upgrade check
+            ```
+
+            Если у сервера нет доступа наружу — скачайте на машине, где он есть, и скопируйте
+            файл через `scp`. Прокси нужен инструменту только для `packages.gitlab.com`.
+          files: |
+            dist/gitlab-upgrade.mjs
+            dist/gitlab-upgrade.mjs.sha256
+            dist/gitlab-upgrade-src.tar.gz
+            dist/gitlab-upgrade-src.tar.gz.sha256
