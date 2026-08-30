@@ -34,6 +34,11 @@ export function parseCli(argv, { t } = {}) {
       backupDir: values['backup-dir'] ?? null,
       backupHook: values['backup-hook'] ?? null,
       dryRun: values['dry-run'],
+      detach: values.detach,
+      // --no-notify побеждает: явный отказ важнее включённого по умолчанию.
+      notify: values['no-notify'] ? false : (values.notify ? true : null),
+      follow: values.follow,
+      journal: values.journal ?? null,
       proxy: values.proxy ?? null,
       proxyCa: values['proxy-ca'] ?? null,
       proxyAllApt: values['proxy-all-apt'],

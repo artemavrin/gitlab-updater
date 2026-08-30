@@ -4,7 +4,7 @@ Safe upgrades for self-managed **GitLab Omnibus** on Ubuntu and Debian — the r
 
 Русская версия: [README.ru.md](README.ru.md)
 
-> **Status: phases 0-2.** Detection, planning, readiness checks, backup, install, migration waiting, state and resume all work and are covered by 176 offline tests. `run` changes the server; everything else is read-only.
+> **Status: phases 0-3.** Detection, planning, readiness checks, backup, install, migration waiting, state, resume, notifications and detach all work and are covered by 192 offline tests. `run` changes the server; everything else is read-only.
 
 ## Why
 
@@ -64,6 +64,19 @@ Each step runs in a fixed order that is never reshuffled: backup, then install, 
 `resume` reconciles the saved state against what is actually installed and refuses to continue when they diverge — between a crash and a resume, someone may have upgraded the server by hand, and the saved plan was computed from a different version. The install phase is the one window where either version is legitimately on disk, and reconciliation accepts both.
 
 Backups follow the profile: `db` for a patch, the first one full and the rest fast for a long path. The dump itself goes wherever `gitlab_rails['backup_path']` points — the tool reads that rather than naming a directory the dump is not in — and the per-step config copies, including `gitlab-secrets.json` without which no dump can be restored, go to `--backup-dir` along with whatever `--backup-hook` receives.
+
+### Walking away
+
+`run --detach` puts the upgrade under `systemd-run` (or `setsid` where systemd is absent), so a dropped SSH session cannot end it. `attach` reconnects to the running one:
+
+```bash
+sudo gitlab-upgrade run --yes --detach
+sudo gitlab-upgrade attach --follow
+```
+
+This works because the JSONL journal on disk *is* the event stream that drives the screen — attach replays it and then follows, and Ctrl-C stops watching without touching the upgrade.
+
+Notifications go to Telegram, Slack or a plain webhook, configured through `/etc/gitlab-upgrade/config.json` or `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`, `SLACK_WEBHOOK_URL`, `NOTIFY_WEBHOOK_URL`. Which events are sent follows the profile: a patch reports only failures, a long path reports every step. Every message carries the host name and the current version, because they are read on a phone with no context and possibly about several servers; the stop message names the backup directory and the command to continue with. A channel that fails to deliver never interrupts the upgrade — a lost message costs information, an aborted upgrade costs the evening.
 
 ### Readiness checks
 

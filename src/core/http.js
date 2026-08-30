@@ -11,6 +11,11 @@ import { socksConnect } from './socks5.js';
  * Проверка сертификата не отключается никогда; для корпоративного
  * перехвата есть отдельный CA (`proxy-ca`).
  */
+export const postJson = (url, data, opts = {}) => request(url, {
+  ...opts, method: 'POST', body: JSON.stringify(data),
+  headers: { 'Content-Type': 'application/json', ...(opts.headers ?? {}) },
+});
+
 export function parseProxy(url) {
   if (!url) return null;
   const u = new URL(url);
@@ -67,7 +72,7 @@ async function openSocket({ proxy, host, port, timeout }) {
   return connectViaHttpProxy({ proxy, host, port, timeout });
 }
 
-export async function request(url, { proxy = null, ca = null, timeout = 20_000, headers = {} } = {}) {
+export async function request(url, { proxy = null, ca = null, timeout = 20_000, headers = {}, method = 'GET', body = null } = {}) {
   const u = new URL(url);
   const secure = u.protocol === 'https:';
   const port = Number(u.port) || (secure ? 443 : 80);
@@ -100,11 +105,19 @@ export async function request(url, { proxy = null, ca = null, timeout = 20_000, 
     });
 
     const path = u.pathname + u.search;
+    const payload = body === null ? null : Buffer.from(body, 'utf8');
+    const all = {
+      Host: u.hostname,
+      Connection: 'close',
+      'User-Agent': 'gitlab-upgrade',
+      ...(payload ? { 'Content-Length': String(payload.length) } : {}),
+      ...headers,
+    };
     socket.write(
-      `GET ${path} HTTP/1.1\r\nHost: ${u.hostname}\r\nConnection: close\r\n` +
-      `User-Agent: gitlab-upgrade\r\n` +
-      Object.entries(headers).map(([k, v]) => `${k}: ${v}\r\n`).join('') +
+      `${method} ${path} HTTP/1.1\r\n` +
+      Object.entries(all).map(([k, v]) => `${k}: ${v}\r\n`).join('') +
       `\r\n`
     );
+    if (payload) socket.write(payload);
   });
 }

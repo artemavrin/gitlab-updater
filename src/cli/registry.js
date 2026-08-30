@@ -26,6 +26,11 @@ export const FLAGS = {
   'backup-dir':      { type: 'string',  group: GROUP.TARGET,  value: 'path' },
   'backup-hook':     { type: 'string',  group: GROUP.TARGET,  value: 'path' },
   'dry-run':         { type: 'boolean', group: GROUP.TARGET },
+  detach:            { type: 'boolean', group: GROUP.OTHER },
+  notify:            { type: 'boolean', group: GROUP.OUTPUT },
+  'no-notify':       { type: 'boolean', group: GROUP.OUTPUT },
+  follow:            { type: 'boolean', group: GROUP.OUTPUT,  short: 'f' },
+  journal:           { type: 'string',  group: GROUP.OUTPUT,  value: 'path' },
 
   lang:              { type: 'string',  group: GROUP.OUTPUT,  value: 'lang', choices: ['ru', 'en'] },
   quiet:             { type: 'boolean', group: GROUP.OUTPUT,  short: 'q' },
@@ -62,16 +67,23 @@ export const COMMANDS = {
   run: {
     mutating: true,      // единственная команда, которая меняет сервер
     requiresRoot: true,
-    flags: [...TARGETING, ...NETWORKING, ...READINESS, 'yes', 'dry-run', ...COMMON],
+    flags: [...TARGETING, ...NETWORKING, ...READINESS, 'yes', 'dry-run', 'detach', 'notify', 'no-notify', ...COMMON],
     exits: { 0: 'done', 1: 'error' },
     result: { target: 'string', steps: 'number', backups: 'array' },
   },
   resume: {
     mutating: true,
     requiresRoot: true,
-    flags: [...NETWORKING, ...READINESS, 'yes', 'dry-run', ...COMMON],
+    flags: [...NETWORKING, ...READINESS, 'yes', 'dry-run', 'detach', 'notify', 'no-notify', ...COMMON],
     exits: { 0: 'done', 1: 'error' },
     result: { target: 'string', steps: 'number', backups: 'array' },
+  },
+  attach: {
+    mutating: false,
+    requiresRoot: true,
+    flags: ['follow', 'journal', ...COMMON],
+    exits: { 0: 'ok', 1: 'no-journal' },
+    result: { path: 'string', events: 'number' },
   },
   doctor: {
     mutating: false,

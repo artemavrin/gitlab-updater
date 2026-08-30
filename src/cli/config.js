@@ -15,6 +15,10 @@ const ENV_KEYS = {
   proxyCa: 'GITLAB_UPGRADE_PROXY_CA',
   lang: 'GITLAB_UPGRADE_LANG',
   backupDir: 'GITLAB_UPGRADE_BACKUP_DIR',
+  telegramToken: 'TELEGRAM_BOT_TOKEN',
+  telegramChat: 'TELEGRAM_CHAT_ID',
+  slackWebhook: 'SLACK_WEBHOOK_URL',
+  notifyWebhook: 'NOTIFY_WEBHOOK_URL',
 };
 
 export const DEFAULTS = {
@@ -24,6 +28,11 @@ export const DEFAULTS = {
   lang: null,
   backupDir: '/var/opt/gitlab/backups',
   backupHook: null,
+  telegramToken: null,
+  telegramChat: null,
+  slackWebhook: null,
+  notifyWebhook: null,
+  notify: true,
   minFreeGb: 5,
   configPath: CONFIG_PATH,
   stateDir: STATE_DIR,

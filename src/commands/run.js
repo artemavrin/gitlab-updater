@@ -144,7 +144,8 @@ export async function commandRun(ctx, { resuming = false } = {}) {
       backups: [], pid: process.pid,
     };
 
-    bus?.emit({ t: 'run:start', steps: state.steps.length, profile, resuming });
+    const runStarted = Date.now();
+    bus?.emit({ t: 'run:start', steps: state.steps.length, profile, resuming, from: state.from, target: state.target });
 
     // Прошлый успешный запуск оставил apt-mark hold; без снятия apt-get install
     // падает уже после того, как бэкап сделан.
@@ -191,11 +192,11 @@ export async function commandRun(ctx, { resuming = false } = {}) {
       if (!dry) {
         const services = await waitServices({ exec, bus, ...settle });
         if (!services.ok) {
-          return stop(t, lines, 'services-down', { step: step.version, running: services.running, total: services.total }, state);
+          return stop(t, lines, 'services-down', { step: step.version, running: services.running, total: services.total }, state, bus);
         }
-        const migrations = await waitMigrations({ exec, bus, ...settle });
+        const migrations = await waitMigrations({ exec, bus, version: step.version, ...settle });
         if (!migrations.ok) {
-          return stop(t, lines, 'migrations-timeout', { step: step.version }, state);
+          return stop(t, lines, 'migrations-timeout', { step: step.version }, state, bus);
         }
       }
 
@@ -207,7 +208,7 @@ export async function commandRun(ctx, { resuming = false } = {}) {
 
     if (!dry) await exec(holdArgv(pkg));
     forget();
-    bus?.emit({ t: 'run:done', target: state.target });
+    bus?.emit({ t: 'run:done', target: state.target, elapsedMin: Math.round((Date.now() - runStarted) / 60_000) });
 
     if (dry) {
       // Предпросмотр не должен читаться как завершённое обновление.
@@ -227,11 +228,13 @@ export async function commandRun(ctx, { resuming = false } = {}) {
     return { code: EXIT.CURRENT, lines, result: { target: state.target, steps: state.steps.length, backups: state.backups } };
   } catch (err) {
     if (err instanceof MigrationsFailed) {
+      bus?.emit({ t: 'run:stopped', reason: 'migrations-failed', detail: err.message, version: null, backup: null });
       return { code: EXIT.ERROR, errorCode: 'migrations-failed', lines: [...lines, ` ${t('run.stop.migrations-failed', { n: err.count })}`, '', `   ${t('run.stop.resumeHint')}`] };
     }
     // Падение apt-get или gitlab-backup — самый вероятный исход, и именно
     // там подсказка про resume нужнее всего. Терять её в общем обработчике
     // значит бросать человека с состоянием на диске и без объяснений.
+    bus?.emit({ t: 'run:stopped', reason: 'step-failed', detail: err.message, version: null, backup: null });
     return {
       code: EXIT.ERROR, errorCode: 'step-failed', detail: err.message,
       lines: [...lines, ` ${t('run.stop.step-failed', { detail: err.message })}`, '', `   ${t('run.stop.resumeHint')}`],
@@ -241,7 +244,11 @@ export async function commandRun(ctx, { resuming = false } = {}) {
   }
 }
 
-function stop(t, lines, reason, params, state) {
+function stop(t, lines, reason, params, state, bus) {
+  bus?.emit({
+    t: 'run:stopped', reason, version: params.step ?? null,
+    backup: state.backups.at(-1)?.configDir ?? null, detail: '',
+  });
   return {
     code: EXIT.ERROR,
     errorCode: reason,

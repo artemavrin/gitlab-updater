@@ -14,6 +14,12 @@ import { commandRefreshPath } from '../src/commands/refreshPath.js';
 import { commandNext } from '../src/commands/next.js';
 import { commandDoctor } from '../src/commands/doctor.js';
 import { commandRun, commandResume } from '../src/commands/run.js';
+import { commandAttach, format as formatEvent } from '../src/commands/attach.js';
+import { createJournal } from '../src/core/logger.js';
+import { createNotifier, channelsFrom } from '../src/notify/index.js';
+import { policyFor } from '../src/plan/planner.js';
+import { detach } from '../src/core/detach.js';
+import { hostname } from 'node:os';
 import { detectOs } from '../src/detect/os.js';
 import { detectGitlab } from '../src/detect/gitlab.js';
 import { EXIT } from '../src/plan/planner.js';
@@ -33,7 +39,14 @@ for (const stream of [process.stdout, process.stderr]) {
 
 const RUNNERS = {
   check: commandCheck, next: commandNext, plan: commandPlan, doctor: commandDoctor,
-  run: commandRun, resume: commandResume, 'refresh-path': commandRefreshPath,
+  run: commandRun, resume: commandResume, attach: commandAttach,
+  'refresh-path': commandRefreshPath,
+};
+
+const MUTATING = new Set(['run', 'resume']);
+const runStamp = () => {
+  const [date, time] = new Date().toISOString().split('T');
+  return `${date.replaceAll('-', '')}-${time.slice(0, 8).replaceAll(':', '')}`;
 };
 
 async function main(argv) {
@@ -78,9 +91,42 @@ async function main(argv) {
   }
 
   const bus = new EventBus();
-  const secrets = [config.proxy].filter(Boolean);
+  const secrets = [config.proxy, config.telegramToken, config.slackWebhook, config.notifyWebhook].filter(Boolean);
   // События идут на stderr, чтобы не смешиваться с результатом на stdout.
   if (flags.events) bus.on(createJsonRenderer({ out: process.stderr, secrets }));
+
+  // Журнал ведётся только для меняющих команд: он и есть то, к чему
+  // подключается attach, и то, что остаётся после падения.
+  let journal = null;
+  let notifier = null;
+  if (MUTATING.has(command)) {
+    journal = createJournal({ dir: config.logDir, stamp: runStamp(), secrets });
+    bus.on(journal.write);
+
+    const wantsNotify = flags.notify ?? config.notify;
+    if (wantsNotify) {
+      notifier = createNotifier({
+        bus, t, host: hostname(),
+        channels: channelsFrom(config),
+        allowFor: (profile) => policyFor(profile).notify,
+        proxy: config.notifyProxy ?? config.proxy, ca: config.proxyCa ?? null,
+        onError: (e) => process.stderr.write(t('notify.failed', e) + '\n'),
+      });
+    }
+  }
+
+  // Увод в фон: обрыв SSH на пятом часу миграций не должен губить апгрейд.
+  if (flags.detach && MUTATING.has(command)) {
+    // Запускаем интерпретатором явно: полагаться на шебанг у скопированного
+    // файла нельзя — бит выполнения теряется при scp чаще, чем кажется.
+    const r = await detach({
+      exec: createExec({ mode: MODE.REAL }),
+      argv: [process.execPath, process.argv[1], ...argv],
+    });
+    const line = r.ok ? t('detach.started', r) : t('detach.unavailable', r);
+    return emit(r.ok ? ok(command, { version: VERSION, result: { unit: r.unit } })
+                     : fail(command, { version: VERSION, code: 'detach-failed', message: line }), [line]);
+  }
 
   // --dry-run пропускает изменяющие команды, но выполняет читающие:
   // иначе план был бы построен на выдуманных данных.
@@ -114,11 +160,14 @@ async function main(argv) {
   ctx.os = detectOs(ctx.osPath);
   ctx.gitlabInfo = await detectGitlab(exec).catch(() => null);
 
+  if (command === 'attach') ctx.render = (e) => process.stdout.write(formatEvent(e) + '\n');
+
   let result;
   try {
     result = await RUNNERS[command](ctx);
   } finally {
     if (confPath) removeAptConf(confPath);
+    await notifier?.pending();
   }
 
   const envelope = result.code === EXIT.ERROR

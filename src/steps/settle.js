@@ -42,12 +42,14 @@ export async function waitServices({ exec, bus, timeoutMs = 20 * 60_000, interva
  */
 export async function waitMigrations({
   exec, bus, timeoutMs = 72 * 3600_000, intervalMs = 60_000,
+  slowAfterMs = 60 * 60_000, version = null,
   now = () => Date.now(), wait = sleep,
 }) {
   const deadline = now() + timeoutMs;
   const started = now();
   const history = [];
   let attempts = Math.ceil(timeoutMs / Math.max(1, intervalMs)) + 1;
+  let slowReported = false;
 
   while (now() < deadline && attempts-- > 0) {
     const r = await exec(['gitlab-rails', 'runner', '-e', 'production', MIGRATION_QUERY], {
@@ -69,8 +71,15 @@ export async function waitMigrations({
 
     history.push({ at: now(), queued });
     const rate = rateOf(history);
-    bus?.emit({ t: 'migrations:progress', queued, rate, elapsedMs: now() - started });
-    if (queued === 0) return { ok: true, elapsedMs: now() - started };
+    const elapsedMs = now() - started;
+    bus?.emit({ t: 'migrations:progress', queued, rate, elapsedMs });
+    // Один сигнал на шаг: «идёт дольше обычного» стоит сказать, но не
+    // превращать в поток сообщений раз в минуту на протяжении шести часов.
+    if (!slowReported && elapsedMs > slowAfterMs) {
+      slowReported = true;
+      bus?.emit({ t: 'migrations:slow', version, queued, elapsedMin: Math.round(elapsedMs / 60_000) });
+    }
+    if (queued === 0) return { ok: true, elapsedMs };
 
     await wait(intervalMs);
   }
