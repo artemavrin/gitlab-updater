@@ -187,7 +187,7 @@
   "check.session-detached.ok": "без TTY",
   "check.session.warn": "SSH без tmux: обрыв связи прервёт наблюдение, см. --detach",
   "check.os-ceiling.ok": "в порядке",
-  "check.os-ceiling.warn": "{os} поддерживает максимум {max}, а цель {target} — добавьте --safe-for-os",
+  "check.os-ceiling.warn": "{os} поддерживает максимум {max}, а цель {target} — нужен --safe-for-os или --allow-unsupported-os",
   "check.postgres.ok": "{have}",
   "check.postgres.critical": "версия {have}, а {target} требует не ниже {need}",
   "check.postgres-unknown.warn": "версию определить не удалось",
@@ -350,5 +350,8 @@
   "remedy.migrations-docs": "rake-задача зависит от версии — см. документацию",
   "blockers.title": "Обновление не начнётся — критических: {critical}",
   "blockers.warnTitle": "Есть предупреждения: {warnings}",
-  "blockers.passed": "пройдено проверок: {n}"
+  "blockers.passed": "пройдено проверок: {n}",
+  "doctor.osCeiling": "Цель выше того, что поддерживает эта ОС. Понизить: --safe-for-os. Принять риск: --allow-unsupported-os.",
+  "error.code.os-ceiling-not-accepted": "цель выше потолка ОС и не подтверждена явно",
+  "flag.allow-unsupported-os.desc": "подняться выше потолка ОС (--force этого не делает)"
 }

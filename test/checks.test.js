@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createExec, MODE } from '../src/core/exec.js';
 import { createTranslator, LOCALES } from '../src/i18n/index.js';
-import { runChecks, CHECKS, DEPTH, blocked } from '../src/checks/index.js';
+import { runChecks, CHECKS, DEPTH, blocked, gate } from '../src/checks/index.js';
 import { commandDoctor } from '../src/commands/doctor.js';
 import { LEVEL } from '../src/core/events.js';
 import { COMMANDS } from '../src/cli/registry.js';
@@ -204,4 +204,56 @@ test('поля result doctor совпадают с реестром', async () =
     config: {}, data, osPath: osPath(osReleaseJammy), uid: 0, env: {}, isTty: false,
   });
   assert.deepEqual(Object.keys(r.result).sort(), Object.keys(COMMANDS.doctor.result).sort());
+});
+
+test('--force не поднимает выше потолка ОС', () => {
+  // «Игнорировать предупреждения» и «поставить версию, для которой под эту
+  // ОС нет пакетов» — про разное. Для агента --force читается как
+  // «продолжить несмотря на шум», и это была бы самая дорогая опечатка.
+  const summary = {
+    ok: 5, warnings: 1, critical: 0,
+    findings: [{ id: 'os-ceiling', check: 'os-ceiling', level: LEVEL.WARN, params: {} }],
+  };
+  assert.equal(gate(summary, {}).reason, 'os-ceiling-not-accepted');
+  assert.equal(gate(summary, { force: true }).reason, 'os-ceiling-not-accepted');
+  assert.equal(gate(summary, { allowUnsupportedOs: true }).ok, true);
+});
+
+test('--force по-прежнему снимает обычные предупреждения', () => {
+  const summary = {
+    ok: 5, warnings: 1, critical: 0,
+    findings: [{ id: 'session', check: 'session', level: LEVEL.WARN, params: {} }],
+  };
+  assert.equal(gate(summary, {}).reason, 'warnings-not-accepted');
+  assert.equal(gate(summary, { force: true }).ok, true);
+});
+
+test('критическое не снимается ничем', () => {
+  const summary = {
+    ok: 0, warnings: 0, critical: 1,
+    findings: [{ id: 'migrations-failed', check: 'migrations', level: LEVEL.CRITICAL, params: { n: 1 } }],
+  };
+  for (const flags of [{}, { force: true }, { allowUnsupportedOs: true }, { force: true, allowUnsupportedOs: true }]) {
+    assert.equal(gate(summary, flags).reason, 'checks-failed');
+  }
+});
+
+test('незавершённые миграции при resume не требуют --force', () => {
+  const summary = {
+    ok: 5, warnings: 1, critical: 0,
+    findings: [{ id: 'migrations-pending', check: 'migrations', level: LEVEL.WARN, params: { n: 3 } }],
+  };
+  assert.equal(gate(summary, {}).reason, 'warnings-not-accepted');
+  assert.equal(gate(summary, {}, { resuming: true }).ok, true);
+});
+
+test('doctor и run выносят один вердикт', async () => {
+  // Если doctor говорит «всё в порядке», а run отказывается, доверие к
+  // doctor кончается на первом же таком случае.
+  const summary = {
+    ok: 5, warnings: 1, critical: 0,
+    findings: [{ id: 'os-ceiling', check: 'os-ceiling', level: LEVEL.WARN, params: {} }],
+  };
+  assert.equal(gate(summary, { force: true }).verdict, 'doctor.osCeiling');
+  assert.notEqual(gate(summary, { force: true }).verdict, 'doctor.clean');
 });

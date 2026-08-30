@@ -1,8 +1,7 @@
 import { join } from 'node:path';
 import { acquireLock, LockedError } from '../core/lock.js';
 import { saveState, clearState, loadState, reconcile } from '../core/state.js';
-import { runChecks, DEPTH, blocked } from '../checks/index.js';
-import { LEVEL } from '../core/events.js';
+import { runChecks, DEPTH, blocked, gate } from '../checks/index.js';
 import { runBackup, MODE as BACKUP } from '../steps/backup.js';
 import { installVersion, predownload, updateLists, holdArgv, releaseHold } from '../steps/install.js';
 import { waitServices, waitMigrations, MigrationsFailed } from '../steps/settle.js';
@@ -114,17 +113,10 @@ export async function commandRun(ctx, { resuming = false } = {}) {
       findings: checks.findings.map((f) => ({ id: f.id, check: f.check, level: f.level, params: f.params, remedy: f.remedy ?? null })),
     };
     lines.push('', ...renderFindings(t, checks.findings), '', `   ${t('doctor.summary', checks)}`, '');
-    if (blocked(checks)) {
-      lines.push(` ${t('doctor.blocked')}`, '');
-      return { code: EXIT.ERROR, errorCode: 'checks-failed', lines, verdict: 'doctor.blocked', result: checksResult };
-    }
-    // Незавершённые миграции при resume — ровно то состояние, ради выхода
-    // из которого resume и запускают. Требовать за него --force бессмысленно.
-    const blocking = checks.findings.filter((f) =>
-      f.level === LEVEL.WARN && !(resuming && f.id === 'migrations-pending'));
-    if (blocking.length && !flags.force) {
-      lines.push(` ${t('doctor.warned')}`, '');
-      return { code: EXIT.ERROR, errorCode: 'warnings-not-accepted', lines, verdict: 'doctor.warned', result: checksResult };
+    const ready = gate(checks, flags, { resuming });
+    if (!ready.ok) {
+      lines.push(` ${t(ready.verdict)}`, '');
+      return { code: EXIT.ERROR, errorCode: ready.reason, lines, verdict: ready.verdict, result: checksResult };
     }
 
     if (!flags.yes && !dry) {

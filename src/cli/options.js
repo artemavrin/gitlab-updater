@@ -31,6 +31,7 @@ export function parseCli(argv, { t } = {}) {
       patchOnly: values['patch-only'],
       minFreeGb: values['min-free-gb'] ?? null,
       force: values.force,
+      allowUnsupportedOs: values['allow-unsupported-os'],
       backupDir: values['backup-dir'] ?? null,
       backupHook: values['backup-hook'] ?? null,
       dryRun: values['dry-run'],

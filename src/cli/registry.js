@@ -23,6 +23,7 @@ export const FLAGS = {
 
   'min-free-gb':     { type: 'string',  group: GROUP.TARGET,  value: 'number' },
   force:             { type: 'boolean', group: GROUP.TARGET },
+  'allow-unsupported-os': { type: 'boolean', group: GROUP.TARGET },
   'backup-dir':      { type: 'string',  group: GROUP.TARGET,  value: 'path' },
   'backup-hook':     { type: 'string',  group: GROUP.TARGET,  value: 'path' },
   'dry-run':         { type: 'boolean', group: GROUP.TARGET },
@@ -48,7 +49,7 @@ export const FLAGS = {
 
 const COMMON = ['lang', 'json', 'events', 'plain', 'no-color', 'config', 'help'];
 const TARGETING = ['from', 'to', 'target-major', 'safe-for-os', 'patch-only'];
-const READINESS = ['min-free-gb', 'force', 'backup-dir', 'backup-hook'];
+const READINESS = ['min-free-gb', 'force', 'allow-unsupported-os', 'backup-dir', 'backup-hook'];
 const NETWORKING = ['proxy', 'proxy-ca', 'proxy-all-apt'];
 
 /**

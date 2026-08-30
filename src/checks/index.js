@@ -200,3 +200,33 @@ export async function runChecks(ctx, { depth = DEPTH.FAST } = {}) {
  */
 export const blocked = (summary) => summary.critical > 0;
 export const needsForce = (summary, { force = false }) => summary.warnings > 0 && !force;
+
+/**
+ * Одно правило готовности на все команды.
+ *
+ * `doctor` и `run` обязаны отвечать одинаково: если doctor говорит «всё в
+ * порядке», а run отказывается — доверие к doctor кончается на первом же
+ * таком случае.
+ *
+ * Потолок ОС вынесен из-под `--force` отдельно. «Игнорировать
+ * предупреждения» и «поставить версию, для которой под эту ОС нет пакетов»
+ * — про разное, а флаг был один; для агента `--force` читается как
+ * «продолжить несмотря на шум».
+ */
+export function gate(summary, flags = {}, { resuming = false } = {}) {
+  const has = (id) => summary.findings.some((f) => f.id === id && f.level === LEVEL.WARN);
+  if (blocked(summary)) {
+    return { ok: false, reason: 'checks-failed', verdict: 'doctor.blocked' };
+  }
+  if (has('os-ceiling') && !flags.allowUnsupportedOs) {
+    return { ok: false, reason: 'os-ceiling-not-accepted', verdict: 'doctor.osCeiling' };
+  }
+  // Незавершённые миграции при resume — ровно то состояние, ради выхода из
+  // которого resume и запускают. Требовать за него --force бессмысленно.
+  const rest = summary.findings.filter((f) =>
+    f.level === LEVEL.WARN && f.id !== 'os-ceiling' && !(resuming && f.id === 'migrations-pending'));
+  if (rest.length && !flags.force) {
+    return { ok: false, reason: 'warnings-not-accepted', verdict: 'doctor.warned' };
+  }
+  return { ok: true, reason: null, verdict: 'doctor.clean' };
+}

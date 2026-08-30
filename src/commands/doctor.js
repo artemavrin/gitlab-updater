@@ -1,4 +1,4 @@
-import { runChecks, DEPTH, blocked } from '../checks/index.js';
+import { runChecks, DEPTH, blocked, gate } from '../checks/index.js';
 import { width, pad, wrap } from '../render/format.js';
 import { describeFinding, blockerLines } from '../render/findings.js';
 import { EXIT } from '../plan/planner.js';
@@ -47,8 +47,9 @@ export async function commandDoctor(ctx) {
     safeForOs: flags.safeForOs,
   }, { depth });
 
-  const verdict = blocked(summary) ? 'doctor.blocked'
-    : (summary.warnings && !flags.force) ? 'doctor.warned' : 'doctor.clean';
+  // Тот же вердикт, что вынесет run: иначе doctor скажет «всё в порядке»
+  // там, где апгрейд не начнётся.
+  const { verdict } = gate(summary, flags);
 
   const lines = ['', ...renderFindings(t, summary.findings), ''];
   lines.push(`   ${t('doctor.summary', summary)}`, '', ` ${t(verdict)}`, '');

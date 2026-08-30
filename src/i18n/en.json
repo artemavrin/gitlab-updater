@@ -186,7 +186,7 @@
   "check.session-detached.ok": "no TTY",
   "check.session.warn": "SSH without tmux: a dropped connection ends the watch, see --detach",
   "check.os-ceiling.ok": "fine",
-  "check.os-ceiling.warn": "{os} supports up to {max}, but the target is {target} - add --safe-for-os",
+  "check.os-ceiling.warn": "{os} supports {target} at most {max} — use --safe-for-os or --allow-unsupported-os",
   "check.postgres.ok": "{have}",
   "check.postgres.critical": "version {have}, but {target} requires {need} or newer",
   "check.postgres-unknown.warn": "could not determine the version",
@@ -349,5 +349,8 @@
   "remedy.migrations-docs": "the rake task depends on your version — see the documentation",
   "blockers.title": "The upgrade will not start — {critical} critical",
   "blockers.warnTitle": "There are warnings — {warnings}",
-  "blockers.passed": "{n} checks passed"
+  "blockers.passed": "{n} checks passed",
+  "doctor.osCeiling": "The target is above what this OS supports. Lower it with --safe-for-os, or accept the risk with --allow-unsupported-os.",
+  "error.code.os-ceiling-not-accepted": "the target is above the OS ceiling and was not explicitly accepted",
+  "flag.allow-unsupported-os.desc": "go above the OS ceiling (--force does not do this)"
 }
