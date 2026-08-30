@@ -107,10 +107,16 @@ export async function commandRun(ctx, { resuming = false } = {}) {
       safeForOs: flags.safeForOs,
     }, { depth });
 
+    // Находки уезжают в result в той же форме, что у doctor: экран блокеров
+    // и агент не должны разбирать две разные структуры.
+    const checksResult = {
+      ok: checks.ok, warnings: checks.warnings, critical: checks.critical, blocked: blocked(checks),
+      findings: checks.findings.map((f) => ({ id: f.id, check: f.check, level: f.level, params: f.params, remedy: f.remedy ?? null })),
+    };
     lines.push('', ...renderFindings(t, checks.findings), '', `   ${t('doctor.summary', checks)}`, '');
     if (blocked(checks)) {
       lines.push(` ${t('doctor.blocked')}`, '');
-      return { code: EXIT.ERROR, errorCode: 'checks-failed', lines, result: { checks } };
+      return { code: EXIT.ERROR, errorCode: 'checks-failed', lines, verdict: 'doctor.blocked', result: checksResult };
     }
     // Незавершённые миграции при resume — ровно то состояние, ради выхода
     // из которого resume и запускают. Требовать за него --force бессмысленно.
@@ -118,7 +124,7 @@ export async function commandRun(ctx, { resuming = false } = {}) {
       f.level === LEVEL.WARN && !(resuming && f.id === 'migrations-pending'));
     if (blocking.length && !flags.force) {
       lines.push(` ${t('doctor.warned')}`, '');
-      return { code: EXIT.ERROR, errorCode: 'warnings-not-accepted', lines, result: { checks } };
+      return { code: EXIT.ERROR, errorCode: 'warnings-not-accepted', lines, verdict: 'doctor.warned', result: checksResult };
     }
 
     if (!flags.yes && !dry) {

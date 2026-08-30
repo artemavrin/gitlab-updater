@@ -54,10 +54,13 @@ jobs:
           # лог, а не мусор из перерисовок. Ищем управляющие последовательности.
           set +e
           node gitlab-upgrade.mjs run --yes > /tmp/run.log 2>&1
+          node gitlab-upgrade.mjs doctor > /tmp/doctor.log 2>&1
           set -e
-          if grep -qP '\x1b\[' /tmp/run.log; then
-            echo "в перенаправленном выводе есть ANSI:"; cat -v /tmp/run.log; exit 1
-          fi
+          for f in /tmp/run.log /tmp/doctor.log; do
+            if grep -qP '\x1b\[' "$f"; then
+              echo "в перенаправленном выводе есть ANSI ($f):"; cat -v "$f"; exit 1
+            fi
+          done
 
       - name: Контракт машинного интерфейса
         # Каталог и конверт — публичный контракт для агентов: ломать его молча нельзя.

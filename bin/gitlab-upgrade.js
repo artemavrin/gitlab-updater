@@ -9,6 +9,7 @@ import { createExec, MODE } from '../src/core/exec.js';
 import { EventBus } from '../src/core/events.js';
 import { createJsonRenderer, createPlainRenderer, createAttachRenderer } from '../src/render/plain.js';
 import { inkAvailable } from '../src/ui/available.js';
+import { printBlockers } from '../src/render/blockers.js';
 import { commandCheck } from '../src/commands/check.js';
 import { commandPlan } from '../src/commands/plan.js';
 import { commandRefreshPath } from '../src/commands/refreshPath.js';
@@ -201,6 +202,22 @@ async function main(argv) {
     await screen?.stop();
     if (confPath) removeAptConf(confPath);
     await notifier?.pending();
+  }
+
+  // Экран блокеров отвечает на другой вопрос, чем список проверок: не «что
+  // проверили», а «что мне сейчас чинить». Поднимается только когда есть что
+  // чинить — и только там, где есть экран.
+  const findings = result.result?.findings ?? null;
+  const wantsBlockers = Array.isArray(findings) && !flags.json
+    && findings.some((f) => f.level === 'critical' || f.level === 'warn');
+  if (wantsBlockers) {
+    const count = (level) => findings.filter((f) => f.level === level).length;
+    printBlockers({
+      findings, t, color: flags.noColor ? false : undefined,
+      summary: t('doctor.summary', { ok: count('ok'), warnings: count('warn'), critical: count('critical') }),
+    });
+    // Список уже показан блоком — из строк остаётся вердикт, и только он.
+    result = { ...result, lines: result.verdict ? ['', ` ${t(result.verdict)}`] : [] };
   }
 
   const envelope = result.code === EXIT.ERROR

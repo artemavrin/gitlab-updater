@@ -347,5 +347,8 @@
   "remedy.title": "Что делать",
   "remedy.docs": "подробности:",
   "remedy.migrations-list": "посмотреть список фоновых миграций и их состояние",
-  "remedy.migrations-docs": "rake-задача зависит от версии — см. документацию"
+  "remedy.migrations-docs": "rake-задача зависит от версии — см. документацию",
+  "blockers.title": "Обновление не начнётся — критических: {critical}",
+  "blockers.warnTitle": "Есть предупреждения: {warnings}",
+  "blockers.passed": "пройдено проверок: {n}"
 }
