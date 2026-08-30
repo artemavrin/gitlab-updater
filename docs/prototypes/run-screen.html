@@ -146,13 +146,13 @@
   </div>
   <div id="stage"></div>
 </div>
-<p class="hint"><kbd>p</kbd> открыть путь · <kbd>c</kbd> нажать Ctrl-C · <kbd>j</kbd> прыгнуть к фазе dpkg</p>
+<p class="hint"><kbd>p</kbd> открыть путь · <kbd>↑</kbd><kbd>↓</kbd> выбрать шаг · <kbd>c</kbd> нажать Ctrl-C · <kbd>j</kbd> к фазе dpkg</p>
 
 <nav class="proto-picker" data-position="top" aria-label="Prototype variants">
   <span class="proto-picker-highlight" aria-hidden="true"></span>
-  <button class="proto-picker-item" data-active aria-current="true">Ветка</button>
-  <button class="proto-picker-item">Таблица</button>
-  <button class="proto-picker-item">Шкала</button>
+  <button class="proto-picker-item" data-active aria-current="true">Колонки</button>
+  <button class="proto-picker-item">Раскрытие</button>
+  <button class="proto-picker-item">Полоса</button>
   <span class="proto-picker-divider" aria-hidden="true"></span>
   <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
 </nav>
@@ -222,81 +222,106 @@ function play(skip, hooks){
    ═══════════════════════════════════════════════════════════════════ */
 
 const STEPS = [
-  { v:'16.3.9-ee',   st:'готово', start:'13:31:20', dur:'2:07:27', min:127, bk:'187 ГБ', bkind:'полный',  mig:'132 → 0' },
-  { v:'16.7.10-ee',  st:'готово', start:'15:38:48', dur:'0:41:07', min:41,  bk:'1.9 ГБ', bkind:'быстрый', mig:'88 → 0'  },
-  { v:'16.11.10-ee', st:'сейчас', start:'16:19:56', dur:null,      min:50,  bk:'2.1 ГБ', bkind:'быстрый', mig:null      },
+  { v:'16.3.9-ee',   st:'готово', start:'13:31:20', dur:'2:07:27', min:127,
+    bk:'187 ГБ', bkind:'полный',  bkat:'13:31:24', bkpath:'…/20260830-1331',
+    inst:'из кэша · 7 мин', svc:'12/12 running', mig:'132 → 0', migdur:'41 мин' },
+  { v:'16.7.10-ee',  st:'готово', start:'15:38:48', dur:'0:41:07', min:41,
+    bk:'1.9 ГБ', bkind:'быстрый', bkat:'15:38:52', bkpath:'…/20260830-1538',
+    inst:'из кэша · 5 мин', svc:'12/12 running', mig:'88 → 0',  migdur:'30 мин' },
+  { v:'16.11.10-ee', st:'сейчас', start:'16:19:56', dur:null,     min:50,
+    bk:'2.1 ГБ', bkind:'быстрый', bkat:'16:23:11', bkpath:'…/20260830-1412',
+    inst:'из кэша · 6 мин', svc:'12/12 running', mig:null,       migdur:null },
   { v:'17.3.7-ee',   st:'ждёт',   min:35 },
   { v:'17.5.5-ee',   st:'ждёт',   min:30 },
   { v:'17.11.6-ee',  st:'цель',   min:45 }
 ];
-const cls = st => st === 'готово' ? 'ok' : st === 'сейчас' ? 'acc' : 'dim';
-const dash = '<span class="dim">—</span>';
+const NOW = 2;
+const cls  = st => st === 'готово' ? 'ok' : st === 'сейчас' ? 'acc' : 'dim';
+const mark = st => st === 'готово' ? '<span class="ok">●</span>'
+                 : st === 'сейчас' ? '<span class="acc">◐</span>'
+                 : '<span class="dim">○</span>';
+const durOf  = (s, S) => s.dur ? s.dur : (s.st === 'сейчас' ? clock(S.step) : '~' + s.min + ' мин');
+const migOf  = (s, S) => s.mig ? s.mig : (s.st === 'сейчас' ? S.remaining + ' осталось' : '—');
+const bkOf   = s => s.bk ? s.bkind + ' ' + s.bk : '—';
 
-/* ── A · Ветка: вертикальный рельс, как git log --graph ── */
-function timelineBranch(S){
+/* ── A · Колонки: рельс становится первой колонкой таблицы ── */
+function timelineColumns(S){
+  const head = '    ' + '<span class="dim">' + pad('версия', 15) + pad('статус', 9) +
+               pad('время', 10) + pad('бэкап', 18) + 'миграции</span>';
+  return [head, ''].concat(STEPS.map(s =>
+    ' ' + mark(s.st) + '  ' +
+    pad('<span class="b">' + s.v + '</span>', 15) +
+    '<span class="' + cls(s.st) + '">' + pad(s.st, 9) + '</span>' +
+    '<span class="dim">' + pad(durOf(s, S), 10) + pad(bkOf(s), 18) + migOf(s, S) + '</span>'
+  ));
+}
+
+/* ── B · Раскрытие: компактно по умолчанию, выбранный шаг разворачивается ── */
+function timelineExpand(S){
   const out = [];
   STEPS.forEach((s, i) => {
-    const mark = s.st === 'готово' ? '<span class="ok">●</span>'
-               : s.st === 'сейчас' ? '<span class="acc">◐</span>'
-               : '<span class="dim">○</span>';
-    const right = s.dur ? s.dur : (s.st === 'сейчас' ? clock(S.step) : '~' + s.min + ' мин');
-    out.push(' ' + mark + '  ' + pad('<span class="b">' + s.v + '</span>', 17) +
-             '<span class="' + cls(s.st) + '">' + pad(s.st, 9) + '</span>' +
-             '<span class="dim">' + right + '</span>');
-    let detail = '';
-    if (s.st === 'готово') detail = 'бэкап ' + s.bkind + ' ' + s.bk + ' · миграции ' + s.mig;
-    else if (s.st === 'сейчас') detail = 'бэкап ' + s.bkind + ' ' + s.bk + ' · ' + spin() +
-      ' <span class="b">' + S.remaining + '</span> миграций, −8 за 10 мин';
-    out.push(' <span class="dim">' + (i < STEPS.length - 1 ? '│' : ' ') + '</span>' +
-             (detail ? '  <span class="dim">' + detail + '</span>' : ''));
+    const sel = i === S.sel;
+    out.push((sel ? '<span class="acc">▸</span>' : ' ') + mark(s.st) + '  ' +
+      pad('<span class="b">' + s.v + '</span>', 15) +
+      '<span class="' + cls(s.st) + '">' + pad(s.st, 9) + '</span>' +
+      '<span class="dim">' + pad(durOf(s, S), 10) + pad(s.bk || '—', 9) + migOf(s, S) + '</span>');
+    if (!sel) return;
+    const rail = ' <span class="dim">│</span>     ';
+    if (s.st === 'ждёт' || s.st === 'цель'){
+      out.push(rail + '<span class="dim">' + pad('оценка', 12) + '~' + s.min +
+               ' мин · бэкап быстрый, установка из кэша</span>');
+      return;
+    }
+    out.push(rail + '<span class="dim">' + pad('бэкап', 12) + s.bkind + ' · ' + s.bk + ' · ' +
+             s.bkat + ' · ' + s.bkpath + '</span>');
+    out.push(rail + '<span class="dim">' + pad('установка', 12) + s.inst +
+             ' · gitlab-ee=' + s.v + '.0</span>');
+    out.push(rail + '<span class="dim">' + pad('сервисы', 12) + s.svc + '</span>');
+    out.push(rail + '<span class="dim">' + pad('миграции', 12) +
+      (s.mig ? s.mig + ' · ' + s.migdur
+             : spin() + ' осталось <span class="b">' + S.remaining +
+               '</span> · −8 за 10 мин · ~' + Math.round(S.remaining / 0.8) + ' мин') + '</span>');
   });
+  out.push('', ' <span class="dim">↑↓ выбрать шаг · [p] вернуться в ленту</span>');
   return out;
 }
 
-/* ── B · Таблица: только данные, никакой графики ── */
-function timelineTable(S){
-  const head = '  <span class="dim">' + pad('шаг', 5) + pad('версия', 15) + pad('статус', 9) +
-               pad('начало', 11) + pad('длительность', 14) + pad('бэкап', 9) + 'миграции</span>';
-  const rule = '  <span class="dim">' + '─'.repeat(W - 4) + '</span>';
-  const rows = STEPS.map((s, i) => {
-    const dur  = s.dur ? s.dur : (s.st === 'сейчас' ? clock(S.step) : '~' + s.min + ' мин');
-    const mig  = s.mig ? s.mig : (s.st === 'сейчас' ? S.remaining + ' осталось' : '—');
-    return '  ' + pad(String(i + 1), 5) +
-           pad('<span class="b">' + s.v + '</span>', 15) +
-           '<span class="' + cls(s.st) + '">' + pad(s.st, 9) + '</span>' +
-           '<span class="dim">' + pad(s.start || '—', 11) + pad(dur, 14) +
-           pad(s.bk || '—', 9) + mig + '</span>';
-  });
-  return [head, rule, ...rows, rule,
-    '  <span class="dim">' + pad('', 5) + 'прошло ' + clock(OVERALL + S.step) +
-    ' из примерно 6:10 · осталось около 2 ч 40 мин</span>'];
-}
-
-/* ── C · Шкала: ось — время, а не номер шага ── */
-function timelineScale(S){
-  const unit = 5;                                  /* один символ ≈ 5 минут */
-  const wide = m => Math.max(1, Math.round(m / unit));
-  const out = STEPS.map(s => {
-    let barHtml;
-    if (s.st === 'готово') barHtml = '<span class="ok">' + '█'.repeat(wide(s.min)) + '</span>';
+/* ── C · Полоса: длительность — такая же колонка данных, но пропорциональная ── */
+function timelineBar(S){
+  const unit  = 10;                                  /* один символ = 10 минут */
+  const perH  = 60 / unit;                           /* 6 символов в часе */
+  const wide  = m => Math.max(1, Math.round(m / unit));
+  const BARW  = Math.max(...STEPS.map(s => wide(s.min))) + 2;
+  const head  = '    ' + '<span class="dim">' + pad('версия', 15) + pad('статус', 9) +
+                pad('длительность', BARW + 9) + pad('бэкап', 9) + 'миграции</span>';
+  const rows = STEPS.map(s => {
+    let b;
+    if (s.st === 'готово') b = '<span class="ok">' + '█'.repeat(wide(s.min)) + '</span>';
     else if (s.st === 'сейчас'){
-      const doneW = Math.max(1, Math.round((S.step / 60) / unit));
-      barHtml = '<span class="acc">' + '█'.repeat(doneW) + '</span>' +
-                '<span class="dim">' + '░'.repeat(Math.max(0, wide(s.min) - doneW)) + '</span>';
-    } else barHtml = '<span class="dim">' + '░'.repeat(wide(s.min)) + '</span>';
-    const right = s.dur ? s.dur : (s.st === 'сейчас' ? clock(S.step) : '~' + s.min + ' мин');
-    const tail  = s.st === 'сейчас' ? 'сейчас · ' + spin() + ' миграции ' + S.remaining : s.st;
-    return ' ' + pad('<span class="b">' + s.v + '</span>', 15) +
-           pad(barHtml, 28) + '<span class="dim">' + pad(right, 10) + tail + '</span>';
+      const d = Math.max(1, Math.round((S.step / 60) / unit));
+      b = '<span class="acc">' + '█'.repeat(d) + '</span>' +
+          '<span class="dim">' + '░'.repeat(Math.max(0, wide(s.min) - d)) + '</span>';
+    } else b = '<span class="dim">' + '░'.repeat(wide(s.min)) + '</span>';
+    return ' ' + mark(s.st) + '  ' +
+      pad('<span class="b">' + s.v + '</span>', 15) +
+      '<span class="' + cls(s.st) + '">' + pad(s.st, 9) + '</span>' +
+      pad(b, BARW) + '<span class="dim">' + pad(durOf(s, S), 9) +
+      pad(s.bk || '—', 9) + migOf(s, S) + '</span>';
   });
-  const perHour = Math.round(60 / unit);
-  let ruler = '0';
-  for (let h = 1; h <= 2; h++) ruler += '─'.repeat(perHour - 2) + h + ' ч';
-  return [...out, '', ' ' + pad('', 15) + '<span class="dim">' + ruler + '</span>',
-          ' ' + pad('', 15) + '<span class="dim">один █ ≈ 5 минут</span>'];
+  /* линейка ровно в масштабе полос: засечка на каждый час */
+  const hours = Math.floor((BARW - 2) / perH);
+  let ticks = '├', labels = pad('0', perH);
+  for (let h = 1; h <= hours; h++){
+    ticks  += '─'.repeat(perH - 1) + (h === hours ? '┤' : '┼');
+    labels += pad(h + ' ч', perH);
+  }
+  const off = '    ' + pad('', 15) + pad('', 9);
+  return [head, '', ...rows, '',
+    off + '<span class="dim">' + ticks + '</span>',
+    off + '<span class="dim">' + labels + '  один █ = 10 минут</span>'];
 }
 
-const TIMELINES = { branch: timelineBranch, table: timelineTable, scale: timelineScale };
+const TIMELINES = { columns: timelineColumns, expand: timelineExpand, bar: timelineBar };
 
 /* ═══════════ приложение: лента + доп. экран пути ═══════════ */
 function buildApp(kind, skip){
@@ -329,7 +354,7 @@ function buildApp(kind, skip){
      ' <span class="dim">16:19:56</span>  <span class="b">шаг 3/6</span>  <span class="dim">16.11.10-ee</span>'
     ].forEach(t => row(t));
 
-    const S = { step: 4, danger: false, remaining: 52, phase: '', phaseLabel: '', open: false };
+    const S = { step: 4, danger: false, remaining: 52, phase: '', phaseLabel: '', open: false, sel: NOW };
     const emit = html => { row(html); feed.scrollTop = feed.scrollHeight; };
 
     const paintPin = () => {
@@ -402,6 +427,11 @@ function buildApp(kind, skip){
 
     api = {
       jump: () => buildApp(kind, 3700),
+      nav(d){
+        if (!S.open) return;
+        S.sel = Math.min(STEPS.length - 1, Math.max(0, S.sel + d));
+        paintPath();
+      },
       path(){
         S.open = !S.open;
         vPath.hidden = !S.open;
@@ -432,12 +462,12 @@ function buildApp(kind, skip){
   return '';
 }
 
-const variantBranch = () => buildApp('branch');
-const variantTable  = () => buildApp('table');
-const variantScale  = () => buildApp('scale');
+const variantColumns = () => buildApp('columns');
+const variantExpand  = () => buildApp('expand');
+const variantBar     = () => buildApp('bar');
 
 /* ═══════════ пикер ═══════════ */
-const variants = [variantBranch, variantTable, variantScale];
+const variants = [variantColumns, variantExpand, variantBar];
 
 const picker = document.querySelector('.proto-picker');
 const highlight = picker.querySelector('.proto-picker-highlight');
@@ -480,6 +510,8 @@ document.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const num = parseInt(e.key, 10);
   if (num >= 1 && num <= variants.length) setActive(num - 1);
+  else if (e.key === 'ArrowUp'){ e.preventDefault(); api.nav(-1); }
+  else if (e.key === 'ArrowDown'){ e.preventDefault(); api.nav(1); }
   else if (e.key === 'ArrowRight') setActive((current + 1) % variants.length);
   else if (e.key === 'ArrowLeft') setActive((current - 1 + variants.length) % variants.length);
   else if (e.key === 'r' || e.key === 'R') mount(current);
