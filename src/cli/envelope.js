@@ -9,10 +9,18 @@ export function ok(command, { version, exit = 0, result = null, findings = [] })
   return { tool: 'gitlab-upgrade', version, command, ok: exit === 0 || exit >= 10, exit, result, findings, error: null };
 }
 
-export function fail(command, { version, exit = 1, code, message, detail = null, findings = [] }) {
+/**
+ * Неуспех тоже несёт `result`.
+ *
+ * Раньше он обнулялся, и агент, спросивший «почему нельзя обновляться»,
+ * получал вместо находок весь отрисованный экран одной строкой в
+ * `error.message`. Структура нужна именно в этот момент, а не когда всё
+ * хорошо.
+ */
+export function fail(command, { version, exit = 1, code, message, detail = null, result = null, findings = [] }) {
   return {
     tool: 'gitlab-upgrade', version, command, ok: false, exit,
-    result: null, findings,
+    result, findings,
     error: { code, message, ...(detail ? { detail } : {}) },
   };
 }

@@ -62,8 +62,12 @@ test('--proxy-all-apt включает глобальный прокси осо�
 });
 
 test('разбор URL прокси даёт тип, порт и креды', () => {
-  assert.deepEqual(parseProxy('socks5h://u:p@10.0.0.5:1080'), { kind: 'socks5', host: '10.0.0.5', port: 1080, username: 'u', password: 'p' });
+  assert.deepEqual(parseProxy('socks5h://u:p@10.0.0.5:1080'),
+    { kind: 'socks5', scheme: 'socks5h', host: '10.0.0.5', port: 1080, username: 'u', password: 'p' });
+  // Ходим мы всегда с ATYP=domain, поэтому даже записанный socks5 остаётся
+  // socks5h в том, что показываем: разница — в том, кто резолвит имя.
+  assert.equal(parseProxy('socks5://10.0.0.5:1080').scheme, 'socks5h');
   assert.equal(parseProxy('http://10.0.0.5:8080').kind, 'http');
   assert.equal(parseProxy(null), null);
-  assert.throws(() => parseProxy('ftp://x'), /неизвестный тип прокси/);
+  assert.throws(() => parseProxy('ftp://x'), (e) => e.code === 'proxy-scheme' && e.params.scheme === 'ftp');
 });

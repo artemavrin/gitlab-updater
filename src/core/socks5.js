@@ -1,4 +1,5 @@
 import net from 'node:net';
+import { NetError, NET, SOCKS_REPLY } from './netError.js';
 
 /**
  * Минимальный клиент SOCKS5 (RFC 1928 + 1929).
@@ -13,11 +14,11 @@ export function socksConnect({ proxyHost, proxyPort, host, port, username, passw
     let stage = 'greeting';
     let buf = Buffer.alloc(0);
 
-    const fail = (msg) => {
+    const fail = (err) => {
       socket.destroy();
-      reject(new Error(msg));
+      reject(err);
     };
-    const timer = setTimeout(() => fail(`SOCKS5: таймаут ${timeout} мс на этапе ${stage}`), timeout);
+    const timer = setTimeout(() => fail(new NetError(NET.SOCKS_TIMEOUT, { stage, timeout })), timeout);
     const finish = (err) => {
       clearTimeout(timer);
       socket.removeListener('data', onData);
@@ -52,13 +53,13 @@ export function socksConnect({ proxyHost, proxyPort, host, port, username, passw
         buf = buf.subarray(2);
         if (method === 0x00) { sendConnect(); }
         else if (method === 0x02) {
-          if (!username) return finish('SOCKS5: прокси требует авторизацию, а логин не задан');
+          if (!username) return finish(new NetError(NET.SOCKS_AUTH_REQUIRED));
           stage = 'auth';
           const u = Buffer.from(username, 'utf8');
           const p = Buffer.from(password ?? '', 'utf8');
           socket.write(Buffer.concat([Buffer.from([0x01, u.length]), u, Buffer.from([p.length]), p]));
         } else {
-          return finish('SOCKS5: прокси не принял ни один метод авторизации');
+          return finish(new NetError(NET.SOCKS_NO_METHOD));
         }
       }
 
@@ -66,14 +67,14 @@ export function socksConnect({ proxyHost, proxyPort, host, port, username, passw
         if (buf.length < 2) return;
         const status = buf[1];
         buf = buf.subarray(2);
-        if (status !== 0x00) return finish('SOCKS5: логин или пароль отклонены прокси');
+        if (status !== 0x00) return finish(new NetError(NET.SOCKS_AUTH_REJECTED));
         sendConnect();
       }
 
       if (stage === 'connect') {
         if (buf.length < 5) return;
         const reply = buf[1];
-        if (reply !== 0x00) return finish(`SOCKS5: прокси отказал в CONNECT (код ${reply}): ${SOCKS_ERRORS[reply] ?? 'неизвестная причина'}`);
+        if (reply !== 0x00) return finish(new NetError(NET.SOCKS_REFUSED, { reply, why: SOCKS_REPLY[reply] ?? 'socks.unknown' }));
         const atyp = buf[3];
         const addrLen = atyp === 0x01 ? 4 : atyp === 0x03 ? buf[4] + 1 : 16;
         const total = 4 + addrLen + 2;
@@ -87,13 +88,3 @@ export function socksConnect({ proxyHost, proxyPort, host, port, username, passw
   });
 }
 
-const SOCKS_ERRORS = {
-  0x01: 'общий сбой сервера',
-  0x02: 'соединение запрещено правилами',
-  0x03: 'сеть недоступна',
-  0x04: 'хост недоступен',
-  0x05: 'соединение отклонено',
-  0x06: 'истёк TTL',
-  0x07: 'команда не поддерживается',
-  0x08: 'тип адреса не поддерживается',
-};

@@ -34,6 +34,7 @@ const DOCS = {
   // /administration/package_information/supported_os/ отдаёт 302 на авторизацию
   // и для текущих версий мёртв; таблица поддерживаемых ОС живёт здесь.
   os: 'https://docs.gitlab.com/install/package/',
+  install: 'https://docs.gitlab.com/install/package/',
 };
 
 /**
@@ -72,6 +73,14 @@ export const REMEDIES = {
 
   'os-ceiling.warn': flag('safe-for-os', '--safe-for-os', DOCS.os),
   'session.warn': flag('detach', '--detach'),
+
+  // Диагностика прокси. Здесь починка — половина смысла команды: «пакетов
+  // не видно» ищут перебором именно потому, что никто не сказал, что нажать.
+  'proxy-none.warn': flag('set-proxy', '--proxy'),
+  'proxy-tls-intercepted.critical': flag('proxy-ca', '--proxy-ca'),
+  'apt-repo.critical': run('apt-update', ['apt-get', 'update']),
+  'apt-no-repo.critical': read('add-repo', DOCS.install),
+  'apt-direct.warn': flag('proxy-all-apt', '--proxy-all-apt'),
 };
 
 /**
@@ -88,6 +97,14 @@ export const NO_REMEDY = new Set([
   'postgres-unknown.warn',
   'disk-unknown.warn',
   'check-failed.warn',
+  // Рубежи прокси: чинится настройкой сети, а не командой на сервере.
+  // Сообщение каждого называет, что именно не сошлось.
+  'proxy-config.critical',
+  'proxy-tcp.critical',
+  'proxy-handshake.critical',
+  'proxy-connect.critical',
+  'proxy-tls.critical',
+  'proxy-http.critical',
 ]);
 
 /**

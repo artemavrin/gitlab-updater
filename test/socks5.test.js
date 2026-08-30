@@ -66,7 +66,7 @@ test('неверный пароль даёт понятную ошибку, а �
   const port = await f.listen();
   await assert.rejects(
     () => socksConnect({ proxyHost: '127.0.0.1', proxyPort: port, host: 'example.com', port: 80, username: 'svc', password: 'wrong' }),
-    /логин или пароль отклонены/
+    (e) => e.code === 'socks-auth-rejected'
   );
   f.server.close();
 });
@@ -76,7 +76,7 @@ test('прокси требует авторизацию, а логина нет
   const port = await f.listen();
   await assert.rejects(
     () => socksConnect({ proxyHost: '127.0.0.1', proxyPort: port, host: 'example.com', port: 80 }),
-    /не принял ни один метод авторизации/
+    (e) => e.code === 'socks-no-method'
   );
   f.server.close();
 });
@@ -86,7 +86,7 @@ test('отказ прокси в CONNECT расшифровывается', asyn
   const port = await f.listen();
   await assert.rejects(
     () => socksConnect({ proxyHost: '127.0.0.1', proxyPort: port, host: 'packages.gitlab.com', port: 443 }),
-    /соединение запрещено правилами/
+    (e) => e.code === 'socks-refused' && e.params.why === 'socks.forbidden'
   );
   f.server.close();
 });
@@ -96,7 +96,7 @@ test('молчащий прокси обрывается по таймауту, 
   const port = await new Promise((r) => server.listen(0, '127.0.0.1', () => r(server.address().port)));
   await assert.rejects(
     () => socksConnect({ proxyHost: '127.0.0.1', proxyPort: port, host: 'x', port: 1, timeout: 150 }),
-    /таймаут/
+    (e) => e.code === 'socks-timeout'
   );
   server.close();
 });

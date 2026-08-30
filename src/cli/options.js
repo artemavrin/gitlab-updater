@@ -11,6 +11,9 @@ export function parseCli(argv, { t } = {}) {
   let command = positionals[0];
   let topic = positionals[1] ?? null;
 
+  // `proxy test` двумя словами — форма из PLAN §3.8. Принимаем её, чтобы
+  // прочитавший документ не упёрся в «неизвестная команда».
+  if (command === 'proxy' && positionals[1] === 'test') command = 'proxy-test';
   if (command === 'help') { topic = positionals[1] ?? null; command = 'help'; }
   else if (values.help) { topic = command ?? null; command = 'help'; }
   else if (values.version || command === 'version') command = 'version';

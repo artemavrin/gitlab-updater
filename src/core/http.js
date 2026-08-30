@@ -2,6 +2,7 @@ import http from 'node:http';
 import tls from 'node:tls';
 import net from 'node:net';
 import { socksConnect } from './socks5.js';
+import { NetError, NET } from './netError.js';
 
 /**
  * Единственная точка сетевых запросов приложения.
@@ -21,10 +22,14 @@ export function parseProxy(url) {
   const u = new URL(url);
   const kind = u.protocol.replace(':', '');
   if (!['http', 'https', 'socks5', 'socks5h'].includes(kind)) {
-    throw new Error(`неизвестный тип прокси: ${u.protocol}`);
+    throw new NetError(NET.PROXY_SCHEME, { scheme: u.protocol.replace(':', '') });
   }
   return {
     kind: kind.startsWith('socks') ? 'socks5' : 'http',
+    // Имя резолвит прокси всегда (ATYP=domain), поэтому в диагностике
+    // показываем socks5h, а не socks5: разница — ровно в том, кто резолвит,
+    // и на изолированном сервере это первое, о чём спрашивают.
+    scheme: kind.startsWith('socks') ? 'socks5h' : kind,
     host: u.hostname,
     port: Number(u.port) || (kind === 'http' ? 8080 : 1080),
     username: u.username ? decodeURIComponent(u.username) : undefined,
@@ -32,7 +37,7 @@ export function parseProxy(url) {
   };
 }
 
-function connectViaHttpProxy({ proxy, host, port, timeout }) {
+export function connectViaHttpProxy({ proxy, host, port, timeout }) {
   return new Promise((resolve, reject) => {
     const headers = { Host: `${host}:${port}` };
     if (proxy.username) {
@@ -46,12 +51,12 @@ function connectViaHttpProxy({ proxy, host, port, timeout }) {
     req.on('connect', (res, socket) => {
       if (res.statusCode !== 200) {
         socket.destroy();
-        reject(new Error(`HTTP-прокси отказал в CONNECT: ${res.statusCode} ${res.statusMessage ?? ''}`.trim()));
+        reject(new NetError(NET.PROXY_CONNECT, { status: res.statusCode, reason: res.statusMessage ?? '' }));
         return;
       }
       resolve(socket);
     });
-    req.on('timeout', () => { req.destroy(new Error(`HTTP-прокси: таймаут ${timeout} мс`)); });
+    req.on('timeout', () => { req.destroy(new NetError(NET.PROXY_TIMEOUT, { timeout })); });
     req.on('error', reject);
     req.end();
   });
@@ -62,7 +67,7 @@ async function openSocket({ proxy, host, port, timeout }) {
     return new Promise((resolve, reject) => {
       const s = net.connect({ host, port, timeout });
       s.once('connect', () => resolve(s));
-      s.once('timeout', () => { s.destroy(); reject(new Error(`таймаут ${timeout} мс`)); });
+      s.once('timeout', () => { s.destroy(); reject(new NetError(NET.TCP_TIMEOUT, { timeout })); });
       s.once('error', reject);
     });
   }
@@ -87,14 +92,14 @@ export async function request(url, { proxy = null, ca = null, timeout = 20_000, 
 
   return new Promise((resolve, reject) => {
     let data = Buffer.alloc(0);
-    const timer = setTimeout(() => { socket.destroy(); reject(new Error(`таймаут ${timeout} мс при чтении ответа`)); }, timeout);
+    const timer = setTimeout(() => { socket.destroy(); reject(new NetError(NET.READ_TIMEOUT, { timeout })); }, timeout);
 
     socket.on('data', (c) => { data = Buffer.concat([data, c]); });
     socket.on('error', (e) => { clearTimeout(timer); reject(e); });
     socket.on('end', () => {
       clearTimeout(timer);
       const sep = data.indexOf('\r\n\r\n');
-      if (sep < 0) return reject(new Error('оборванный HTTP-ответ'));
+      if (sep < 0) return reject(new NetError(NET.TRUNCATED));
       const head = data.subarray(0, sep).toString('latin1').split('\r\n');
       const status = Number(head[0].split(' ')[1]);
       const resHeaders = Object.fromEntries(head.slice(1).map((l) => {

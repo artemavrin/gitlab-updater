@@ -13,6 +13,7 @@ import { printBlockers } from '../src/render/blockers.js';
 import { commandCheck } from '../src/commands/check.js';
 import { commandPlan } from '../src/commands/plan.js';
 import { commandRefreshPath } from '../src/commands/refreshPath.js';
+import { commandProxyTest } from '../src/commands/proxyTest.js';
 import { commandNext } from '../src/commands/next.js';
 import { commandDoctor } from '../src/commands/doctor.js';
 import { commandRun, commandResume } from '../src/commands/run.js';
@@ -42,10 +43,11 @@ for (const stream of [process.stdout, process.stderr]) {
 const RUNNERS = {
   check: commandCheck, next: commandNext, plan: commandPlan, doctor: commandDoctor,
   run: commandRun, resume: commandResume, attach: commandAttach,
-  'refresh-path': commandRefreshPath,
+  'refresh-path': commandRefreshPath, 'proxy-test': commandProxyTest,
 };
 
 const MUTATING = new Set(['run', 'resume']);
+const READINESS = new Set(['doctor', 'plan', 'run', 'resume']);
 
 /**
  * Экраны подключаются динамически. В бандле они лежат рядом, а при запуске
@@ -169,7 +171,7 @@ async function main(argv) {
   }
 
   const ctx = {
-    exec, t, flags, config, bus, confPath,
+    exec, t, flags, config, sources, bus, confPath,
     data: { upgradePath, osMatrix, pgRequirements },
     osPath: '/etc/os-release',
     dataPath: new URL('../data/upgrade-path.json', import.meta.url).pathname,
@@ -204,10 +206,10 @@ async function main(argv) {
     await notifier?.pending();
   }
 
-  // Экран блокеров отвечает на другой вопрос, чем список проверок: не «что
-  // проверили», а «что мне сейчас чинить». Поднимается только когда есть что
-  // чинить — и только там, где есть экран.
-  const findings = result.result?.findings ?? null;
+  // Блок блокеров отвечает на вопрос «можно ли начать» — и принадлежит
+  // только тем командам, которые этот вопрос задают. У `proxy test` вопрос
+  // другой: «где рвётся», и там важен порядок рубежей, который блок теряет.
+  const findings = READINESS.has(command) ? result.result?.findings ?? null : null;
   const wantsBlockers = Array.isArray(findings) && !flags.json
     && findings.some((f) => f.level === 'critical' || f.level === 'warn');
   if (wantsBlockers) {
@@ -224,8 +226,12 @@ async function main(argv) {
     ? fail(command, {
         version: VERSION, exit: result.code,
         code: result.errorCode ?? 'precondition-failed',
-        message: result.lines.filter(Boolean).join(' '),
+        // Одна фраза, а не весь отрисованный экран: подробности лежат в
+        // result.findings, где их можно разобрать, а не читать глазами.
+        message: result.verdict ? t(result.verdict) : result.lines.filter(Boolean).join(' ').trim(),
         detail: result.detail ?? null,
+        result: result.result ?? null,
+        findings: result.result?.findings ?? [],
       })
     : ok(command, { version: VERSION, exit: result.code, result: result.result ?? null, findings: result.plan?.findings ?? [] });
 

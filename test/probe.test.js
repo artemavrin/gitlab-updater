@@ -1,0 +1,222 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import net from 'node:net';
+import tls from 'node:tls';
+import { probeProxy } from '../src/net/probe.js';
+import { commandProxyTest } from '../src/commands/proxyTest.js';
+import { createExec, MODE } from '../src/core/exec.js';
+import { createTranslator, LOCALES } from '../src/i18n/index.js';
+import { remedyFor } from '../src/checks/remedies.js';
+import { LEVEL } from '../src/core/events.js';
+import { EXIT } from '../src/plan/planner.js';
+
+/**
+ * Сеть проверяется без сети: поддельный SOCKS5 и поддельный HTTP-CONNECT
+ * на node:net. Пробы обязаны падать на том рубеже, где рвётся, — иначе
+ * команда не решает задачу, ради которой написана.
+ */
+function fakeSocks({ reply = 0x00, requireAuth = false, silent = false } = {}) {
+  const server = net.createServer((sock) => {
+    if (silent) return;
+    let stage = 'greeting';
+    sock.on('data', (buf) => {
+      if (stage === 'greeting') {
+        if (requireAuth) { stage = 'auth'; return sock.write(Buffer.from([0x05, 0x02])); }
+        stage = 'connect';
+        return sock.write(Buffer.from([0x05, 0x00]));
+      }
+      if (stage === 'auth') { stage = 'connect'; return sock.write(Buffer.from([0x01, 0x01])); }
+      if (stage === 'connect') {
+        sock.write(Buffer.from([0x05, reply, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+        if (reply === 0x00) stage = 'tunnel';
+      }
+    });
+    sock.on('error', () => {});
+  });
+  return { server, listen: () => new Promise((r) => server.listen(0, '127.0.0.1', () => r(server.address().port))) };
+}
+
+/** HTTP-прокси, отвечающий на CONNECT заданным кодом. */
+function fakeHttpProxy({ status = 200 } = {}) {
+  const server = net.createServer((sock) => {
+    sock.once('data', () => {
+      sock.write(`HTTP/1.1 ${status} ${status === 200 ? 'Connection Established' : 'Forbidden'}\r\n\r\n`);
+      if (status !== 200) sock.end();
+    });
+    sock.on('error', () => {});
+  });
+  return { server, listen: () => new Promise((r) => server.listen(0, '127.0.0.1', () => r(server.address().port))) };
+}
+
+const t = createTranslator('ru');
+const at = (steps, id) => steps.find((s) => s.id === id) ?? null;
+const lastLevel = (steps) => steps[steps.length - 1].level;
+
+test('неразбираемый URL прокси не доходит даже до TCP', async () => {
+  const steps = await probeProxy({ proxyUrl: 'ftp://box:1080', t });
+  assert.equal(steps.length, 1);
+  assert.equal(at(steps, 'proxy-config').level, LEVEL.CRITICAL);
+});
+
+test('прокси не слушает — падает TCP, и дальше не идём', async () => {
+  // Порт, который точно никто не слушает: сервер поднят и сразу закрыт.
+  const probe = fakeSocks();
+  const port = await probe.listen();
+  await new Promise((r) => probe.server.close(r));
+
+  const steps = await probeProxy({ proxyUrl: `socks5h://127.0.0.1:${port}`, t, timeout: 2000 });
+  assert.equal(at(steps, 'proxy-config').level, LEVEL.OK);
+  assert.equal(at(steps, 'proxy-tcp').level, LEVEL.CRITICAL);
+  // Шесть одинаковых ошибок подряд только прячут первую.
+  assert.equal(at(steps, 'proxy-handshake'), null);
+});
+
+test('прокси запретил туннель — виден именно CONNECT, а не рукопожатие', async () => {
+  const f = fakeSocks({ reply: 0x02 });
+  const port = await f.listen();
+  const steps = await probeProxy({ proxyUrl: `socks5h://127.0.0.1:${port}`, t, timeout: 2000 });
+  f.server.close();
+
+  assert.equal(at(steps, 'proxy-tcp').level, LEVEL.OK);
+  assert.equal(at(steps, 'proxy-connect').level, LEVEL.CRITICAL);
+  assert.equal(at(steps, 'proxy-handshake'), null, 'рукопожатие прошло — винить его нельзя');
+  assert.match(at(steps, 'proxy-connect').params.detail, /SOCKS5/);
+});
+
+test('HTTP-прокси ответил 403 — тоже CONNECT, а не рукопожатие', async () => {
+  const f = fakeHttpProxy({ status: 403 });
+  const port = await f.listen();
+  const steps = await probeProxy({ proxyUrl: `http://127.0.0.1:${port}`, t, timeout: 2000 });
+  f.server.close();
+  assert.equal(at(steps, 'proxy-connect').level, LEVEL.CRITICAL);
+  assert.match(at(steps, 'proxy-connect').params.detail, /403/);
+});
+
+test('туннель есть, но TLS не поднимается — падает именно TLS', async () => {
+  // Поддельный прокси отдаёт открытый сокет: TLS-рукопожатия на нём не будет.
+  const f = fakeHttpProxy({ status: 200 });
+  const port = await f.listen();
+  const steps = await probeProxy({ proxyUrl: `http://127.0.0.1:${port}`, t, timeout: 2000 });
+  f.server.close();
+
+  assert.equal(at(steps, 'proxy-connect').level, LEVEL.OK);
+  const tlsStep = at(steps, 'proxy-tls') ?? at(steps, 'proxy-tls-intercepted');
+  assert.ok(tlsStep, 'рубеж TLS должен быть в отчёте');
+  assert.equal(tlsStep.level, LEVEL.CRITICAL);
+  assert.equal(at(steps, 'proxy-http'), null);
+});
+
+test('без прокси команда не молчит, а говорит, что идёт напрямую', async () => {
+  const exec = createExec({
+    mode: MODE.REPLAY,
+    fixtures: { 'apt-cache madison gitlab-ee': { code: 0, stdout: ' gitlab-ee | 17.11.7-ee.0 | ...\n' } },
+  });
+  const steps = await probeProxy({ proxyUrl: null, t, exec });
+  assert.equal(at(steps, 'proxy-none').level, LEVEL.WARN);
+  assert.equal(at(steps, 'apt-repo').level, LEVEL.OK);
+  assert.equal(at(steps, 'apt-repo').params.n, 1);
+  // Прямой путь не проверяет доступность Ubuntu мимо прокси — нечего проверять.
+  assert.equal(at(steps, 'apt-direct'), null);
+});
+
+test('apt не видит версий — это отказ, даже если HTTP прошёл', async () => {
+  // Успешный HTTP-запрос ещё ничего не гарантирует: apt ходит своим кодом.
+  const exec = createExec({
+    mode: MODE.REPLAY,
+    fixtures: { 'apt-cache madison gitlab-ee': { code: 100, stdout: '', stderr: 'E: репозиторий недоступен' } },
+  });
+  const steps = await probeProxy({ proxyUrl: null, t, exec });
+  assert.equal(at(steps, 'apt-repo').level, LEVEL.CRITICAL);
+});
+
+test('конфиг прокси уходит в apt тем же файлом, что при установке', async () => {
+  const seen = [];
+  const exec = createExec({
+    mode: MODE.REPLAY,
+    fixtures: { 'apt-cache -c /tmp/apt.conf madison gitlab-ee': { code: 0, stdout: ' gitlab-ee | 17.11.7-ee.0 | x\n' } },
+  });
+  const wrapped = (argv, opts) => { seen.push(argv.join(' ')); return exec(argv, opts); };
+  const steps = await probeProxy({ proxyUrl: null, t, exec: wrapped, confPath: '/tmp/apt.conf' });
+  // Проверять другой набор настроек — проверять не то.
+  assert.ok(seen.some((c) => c.includes('-c /tmp/apt.conf')), seen.join(' | '));
+  assert.equal(at(steps, 'apt-repo').level, LEVEL.OK);
+});
+
+test('команда возвращает код ошибки, когда цепочка рвётся', async () => {
+  const res = await commandProxyTest({
+    t, flags: {}, config: { proxy: 'ftp://x:1' }, sources: { proxy: 'флаг' }, exec: null, confPath: null,
+  });
+  assert.equal(res.code, EXIT.ERROR);
+  assert.equal(res.errorCode, 'proxy-unreachable');
+  assert.equal(res.verdict, 'probe.broken');
+  assert.equal(res.result.critical, 1);
+});
+
+test('пароль прокси не уходит в --json', async () => {
+  const res = await commandProxyTest({
+    t, flags: {}, config: { proxy: 'socks5h://user:s3cret@127.0.0.1:1' },
+    sources: {}, exec: null, confPath: null, timeout: 500,
+  });
+  const json = JSON.stringify(res.result);
+  assert.ok(!json.includes('s3cret'), json);
+  assert.match(res.result.proxy, /\*\*\*/);
+});
+
+for (const locale of Object.keys(LOCALES)) {
+  test(`каждый рубеж переведён и укладывается в 78 колонок — ${locale}`, async () => {
+    const tr = createTranslator(locale);
+    const { renderFindings } = await import('../src/commands/doctor.js');
+    // Все возможные исходы разом, с правдоподобно длинными параметрами.
+    const steps = [
+      { check: 'proxy', id: 'proxy-config', level: LEVEL.OK, params: { kind: 'socks5', host: '10.0.0.5', port: 1080, source: '/etc/gitlab-upgrade/config.json' } },
+      { check: 'proxy', id: 'proxy-tcp', level: LEVEL.OK, params: { host: '10.0.0.5', port: 1080, ms: 12 } },
+      { check: 'proxy', id: 'proxy-handshake', level: LEVEL.OK, params: { kind: 'socks5', auth: tr('probe.auth.password'), ms: 8 } },
+      { check: 'proxy', id: 'proxy-connect', level: LEVEL.OK, params: { host: 'packages.gitlab.com', port: 443 } },
+      { check: 'proxy', id: 'proxy-tls', level: LEVEL.OK, params: { host: 'packages.gitlab.com', issuer: 'DigiCert Inc', validTo: 'Jan 14 2027' } },
+      { check: 'proxy', id: 'proxy-tls-intercepted', level: LEVEL.CRITICAL, params: { host: 'packages.gitlab.com', detail: 'self-signed certificate in certificate chain' } },
+      { check: 'proxy', id: 'proxy-http', level: LEVEL.OK, params: { host: 'packages.gitlab.com', status: 200, ms: 140, detail: '' } },
+      { check: 'proxy', id: 'apt-repo', level: LEVEL.OK, params: { n: 398 } },
+      { check: 'proxy', id: 'apt-direct', level: LEVEL.WARN, params: { host: 'archive.ubuntu.com', detail: 'нет TCP-соединения за 5000 мс' } },
+      { check: 'proxy', id: 'proxy-none', level: LEVEL.WARN, params: {} },
+    ];
+    for (const line of renderFindings(tr, steps)) {
+      assert.ok([...line].length <= 78, `${locale}: ${[...line].length} — «${line}»`);
+      assert.ok(!/\{\w+\}/.test(line), `${locale}: неподставленный параметр — «${line}»`);
+    }
+    // Перехват TLS лечится своим CA, а не отключением проверки.
+    assert.equal(remedyFor({ id: 'proxy-tls-intercepted', level: LEVEL.CRITICAL }).flag, '--proxy-ca');
+  });
+}
+
+test('TLS-проба не отключает проверку сертификата', async () => {
+  // Инвариант дороже любого удобства: проба, которая «для диагностики»
+  // доверяет всему, однажды станет обоснованием так же поступить в бою.
+  const src = await import('node:fs').then((fs) => fs.readFileSync('src/net/probe.js', 'utf8'));
+  assert.ok(!/rejectUnauthorized/.test(src), 'в пробе не должно быть rejectUnauthorized');
+  assert.ok(!/NODE_TLS_REJECT/.test(src));
+  void tls;
+});
+
+test('socks5h показывается как socks5h — имя резолвит прокси', async () => {
+  const f = fakeSocks({ reply: 0x02 });
+  const port = await f.listen();
+  const steps = await probeProxy({ proxyUrl: `socks5h://127.0.0.1:${port}`, t, timeout: 2000 });
+  f.server.close();
+  // Разница socks5 и socks5h — ровно в том, кто резолвит имя, и на
+  // изолированном сервере это первое, о чём спрашивают.
+  assert.equal(at(steps, 'proxy-config').params.kind, 'socks5h');
+  // Даже если в конфиге написали socks5 — ходим мы всё равно с ATYP=domain.
+  const plain = await probeProxy({ proxyUrl: `socks5://127.0.0.1:${port}`, t, timeout: 2000 });
+  assert.equal(at(plain, 'proxy-config').params.kind, 'socks5h');
+});
+
+test('при неуспехе конверт несёт находки, а не стену текста', async () => {
+  const { fail } = await import('../src/cli/envelope.js');
+  const envelope = fail('proxy-test', {
+    version: '0.1.0', code: 'proxy-unreachable', message: 'коротко',
+    result: { findings: [{ id: 'proxy-tcp', level: LEVEL.CRITICAL }] },
+  });
+  // Структура нужна агенту именно в этот момент, а не когда всё хорошо.
+  assert.equal(envelope.result.findings.length, 1);
+  assert.equal(envelope.error.code, 'proxy-unreachable');
+});

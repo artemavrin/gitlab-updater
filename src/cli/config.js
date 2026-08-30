@@ -44,7 +44,7 @@ export function readConfigFile(path = CONFIG_PATH) {
     return JSON.parse(readFileSync(path, 'utf8'));
   } catch (err) {
     if (err.code === 'ENOENT') return {};
-    throw new Error(`не удалось прочитать ${path}: ${err.message}`);
+    throw new Error(`config-unreadable path=${path} detail=${err.message}`);
   }
 }
 

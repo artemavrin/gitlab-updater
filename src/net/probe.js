@@ -1,0 +1,201 @@
+import net from 'node:net';
+import tls from 'node:tls';
+import { readFileSync } from 'node:fs';
+import { connectViaHttpProxy, parseProxy, request } from '../core/http.js';
+import { socksConnect } from '../core/socks5.js';
+import { NetError, NET, netMessage } from '../core/netError.js';
+import { GITLAB_REPO_HOST } from './aptProxy.js';
+import { LEVEL } from '../core/events.js';
+
+/**
+ * Пробы прокси — по одной на каждый рубеж, где связь рвётся.
+ *
+ * Смысл разбиения именно такой: «пакетов не видно» — самый дорогой класс
+ * обращений, потому что причина может быть в шести разных местах. Проба,
+ * которая падает одна, называет место сразу.
+ *
+ * Все пробы читающие. Проверку сертификата не отключает ни одна: для
+ * корпоративного перехвата есть `--proxy-ca`.
+ */
+
+export const UBUNTU_HOST = 'archive.ubuntu.com';
+
+// check совпадает с id: у каждого рубежа свой заголовок, иначе в отчёте
+// девять раз подряд стоит слово «прокси» и читать его незачем.
+const finding = (id, level, params = {}) => ({ check: id, id, level, params });
+const ok = (id, params) => finding(id, LEVEL.OK, params);
+const fail = (id, params) => finding(id, LEVEL.CRITICAL, params);
+const warn = (id, params) => finding(id, LEVEL.WARN, params);
+
+/** Причина отказа — всегда переведённой строкой, а не «[object Object]». */
+const why = (err, t) => netMessage(err, t);
+
+const ms = (started) => Date.now() - started;
+
+function tcpProbe({ host, port, timeout }) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const socket = net.connect({ host, port, timeout });
+    socket.once('connect', () => { socket.destroy(); resolve(ms(started)); });
+    socket.once('timeout', () => { socket.destroy(); reject(new NetError(NET.TCP_TIMEOUT, { timeout })); });
+    socket.once('error', (e) => { socket.destroy(); reject(e); });
+  });
+}
+
+/**
+ * Туннель до узла назначения — тем же кодом, что в рабочем пути.
+ * Своя реализация в пробе разошлась бы с рабочей, и проверка перестала бы
+ * проверять то, чем пользуются.
+ */
+function tunnel({ proxy, host, port, timeout }) {
+  return proxy.kind === 'socks5'
+    ? socksConnect({ proxyHost: proxy.host, proxyPort: proxy.port, host, port, ...proxy, timeout })
+    : connectViaHttpProxy({ proxy, host, port, timeout });
+}
+
+function tlsProbe(socket, { host, ca, timeout }) {
+  return new Promise((resolve, reject) => {
+    const t = tls.connect({ socket, servername: host, ca: ca ?? undefined }, () => {
+      const cert = t.getPeerCertificate();
+      t.destroy();
+      resolve({
+        issuer: cert?.issuer?.O ?? cert?.issuer?.CN ?? null,
+        validTo: cert?.valid_to ?? null,
+      });
+    });
+    t.setTimeout(timeout, () => { t.destroy(); reject(new NetError(NET.READ_TIMEOUT, { timeout })); });
+    t.once('error', (e) => { t.destroy(); reject(e); });
+  });
+}
+
+/**
+ * Полная последовательность. Останавливается на первом отказе: продолжать
+ * после «нет TCP» бессмысленно, а шесть одинаковых ошибок подряд только
+ * прячут первую.
+ */
+export async function probeProxy({
+  proxyUrl, source = null, ca = null, host = GITLAB_REPO_HOST, timeout = 15_000, t,
+  exec = null, confPath = null,
+}) {
+  const steps = [];
+  const add = (f) => { steps.push(f); return f; };
+
+  if (!proxyUrl) {
+    add(warn('proxy-none'));
+    if (exec) await aptProbes({ steps, add, exec, confPath, t, direct: true });
+    return steps;
+  }
+
+  let proxy;
+  try {
+    proxy = parseProxy(proxyUrl);
+  } catch (err) {
+    add(fail('proxy-config', { detail: why(err, t) }));
+    return steps;
+  }
+  add(ok('proxy-config', { kind: proxy.scheme, host: proxy.host, port: proxy.port, source: source ?? '\u2014' }));
+
+  try {
+    const took = await tcpProbe({ host: proxy.host, port: proxy.port, timeout });
+    add(ok('proxy-tcp', { host: proxy.host, port: proxy.port, ms: took }));
+  } catch (err) {
+    add(fail('proxy-tcp', { host: proxy.host, port: proxy.port, detail: why(err, t) }));
+    return steps;
+  }
+
+  let socket;
+  try {
+    const started = Date.now();
+    socket = await tunnel({ proxy, host, port: 443, timeout });
+    add(ok('proxy-handshake', {
+      kind: proxy.scheme,
+      auth: proxy.username ? t('probe.auth.password') : t('probe.auth.none'),
+      ms: ms(started),
+    }));
+    add(ok('proxy-connect', { host, port: 443 }));
+  } catch (err) {
+    // Отказ приходит либо на рукопожатии, либо на CONNECT: код ошибки
+    // различает их точнее, чем порядок вызовов.
+    const onConnect = err instanceof NetError
+      && [NET.SOCKS_REFUSED, NET.PROXY_CONNECT].includes(err.code);
+    add(fail(onConnect ? 'proxy-connect' : 'proxy-handshake', { host, detail: why(err, t) }));
+    return steps;
+  }
+
+  try {
+    const cert = await tlsProbe(socket, { host, ca: readCa(ca), timeout });
+    add(ok('proxy-tls', { host, issuer: cert.issuer ?? '—', validTo: cert.validTo ?? '—' }));
+  } catch (err) {
+    socket.destroy();
+    // Самопроверяемый сертификат в цепочке — почти всегда перехват TLS на
+    // прокси, и лечится он отдельным CA, а не отключением проверки.
+    const intercepted = /self.signed|unable to verify|UNABLE_TO_(GET|VERIFY)/i.test(err.message ?? '');
+    add(fail(intercepted ? 'proxy-tls-intercepted' : 'proxy-tls', { host, detail: why(err, t) }));
+    return steps;
+  }
+
+  try {
+    const started = Date.now();
+    const res = await request(`https://${host}/gitlab/gitlab-ee/gpgkey`, {
+      proxy, ca: readCa(ca), timeout,
+    });
+    const good = res.status >= 200 && res.status < 400;
+    add((good ? ok : fail)('proxy-http', { host, status: res.status, ms: ms(started), detail: '' }));
+    if (!good) return steps;
+  } catch (err) {
+    add(fail('proxy-http', { host, status: '', detail: why(err, t) }));
+    return steps;
+  }
+
+  if (exec) await aptProbes({ steps, add, exec, confPath, t });
+  return steps;
+}
+
+/**
+ * apt — последний рубеж и единственный, который проверяет то, чем пакеты
+ * реально ставятся. Успешный HTTP-запрос ещё ничего не гарантирует: apt
+ * ходит своим кодом и своим конфигом.
+ */
+async function aptProbes({ add, exec, confPath, t, direct = false }) {
+  try {
+    // Самая частая причина «apt ничего не видит» — репозиторий GitLab просто
+    // не подключён. Отличать это от сломанного прокси и есть тот час, ради
+    // которого команда написана.
+    const src = await exec(
+      ['grep', '-rl', GITLAB_REPO_HOST, '/etc/apt/sources.list', '/etc/apt/sources.list.d/'],
+      { readOnly: true, allowFailure: true },
+    );
+    if (src.code !== 0 || !src.stdout.trim()) {
+      add(fail('apt-no-repo'));
+      return;
+    }
+  } catch { /* нет grep — идём дальше, madison всё равно ответит */ }
+
+  try {
+    // Тот же конфиг прокси, что уходит в apt-get при установке: проверять
+    // другой набор настроек — проверять не то.
+    const argv = ['apt-cache', ...(confPath ? ['-c', confPath] : []), 'madison', 'gitlab-ee'];
+    const r = await exec(argv, { readOnly: true, allowFailure: true, timeout: 60_000 });
+    const n = r.stdout.split('\n').filter((l) => l.includes('gitlab-ee')).length;
+    add(n > 0
+      ? ok('apt-repo', { n })
+      : fail('apt-repo', { detail: (r.stderr || '').trim().split('\n').pop() || t('probe.noDetail') }));
+  } catch (err) {
+    add(fail('apt-repo', { detail: err.message || t('probe.noDetail') }));
+  }
+
+  if (direct) return;
+  try {
+    // Зеркало Ubuntu на закрытом контуре обычно внутреннее и мимо прокси —
+    // поэтому это предупреждение, а не отказ.
+    const took = await tcpProbe({ host: UBUNTU_HOST, port: 80, timeout: 5000 });
+    add(ok('apt-direct', { host: UBUNTU_HOST, ms: took }));
+  } catch (err) {
+    add(warn('apt-direct', { host: UBUNTU_HOST, detail: why(err, t) }));
+  }
+}
+
+function readCa(ca) {
+  if (!ca) return null;
+  try { return readFileSync(ca); } catch { return null; }
+}

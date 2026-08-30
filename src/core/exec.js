@@ -3,10 +3,21 @@ import { redactArgv } from './redact.js';
 
 export const MODE = { REAL: 'real', DRY: 'dry', REPLAY: 'replay' };
 
+/**
+ * Ошибка запуска — кодом, а не фразой. Текст берётся из локали по
+ * `error.exec.<code>`: он уезжает и на экран остановки, и в уведомление на
+ * телефон, где язык уже выбран пользователем. `message` остаётся машинным —
+ * его читают в журнале.
+ */
 export class ExecError extends Error {
-  constructor(message, result) {
-    super(message);
+  constructor(code, result = {}) {
+    const detail = Object.entries(result)
+      .filter(([k]) => ['argv', 'code', 'key', 'timeout'].includes(k))
+      .map(([k, v]) => `${k}=${v}`).join(' ');
+    super(detail ? `${code} ${detail}` : code);
     this.name = 'ExecError';
+    this.code = code;
+    this.params = result;
     this.result = result;
   }
 }
@@ -38,7 +49,7 @@ export function createExec({ mode = MODE.REAL, fixtures = null, bus = null, secr
       const full = { ...result, argv: safe, durationMs: Date.now() - started };
       bus?.emit({ t: 'exec:end', argv: safe, code: full.code, durationMs: full.durationMs });
       if (!allowFailure && full.code !== 0) {
-        throw new ExecError(`команда завершилась с кодом ${full.code}: ${safe.join(' ')}`, full);
+        throw new ExecError('exec-failed', { ...full, argv: safe.join(' ') });
       }
       return full;
     };
@@ -51,7 +62,7 @@ export function createExec({ mode = MODE.REAL, fixtures = null, bus = null, secr
       const key = fixtureKey(argv);
       const hit = fixtures?.[key];
       if (hit === undefined) {
-        return Promise.reject(new ExecError(`нет фикстуры для команды: ${key}`, { code: 127 }));
+        return Promise.reject(new ExecError('exec-no-fixture', { code: 127, key }));
       }
       const shaped = typeof hit === 'string' ? { code: 0, stdout: hit, stderr: '' } : hit;
       return Promise.resolve(done({ stdout: '', stderr: '', code: 0, ...shaped }));
@@ -78,7 +89,7 @@ export function createExec({ mode = MODE.REAL, fixtures = null, bus = null, secr
       child.on('close', (code) => {
         clearTimeout(timer);
         if (timedOut) {
-          reject(new ExecError(`превышен таймаут ${timeout} мс: ${safe.join(' ')}`, { code: 124, stdout, stderr }));
+          reject(new ExecError('exec-timeout', { code: 124, stdout, stderr, timeout, argv: safe.join(' ') }));
           return;
         }
         try {

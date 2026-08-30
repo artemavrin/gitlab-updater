@@ -133,6 +133,15 @@ export const COMMANDS = {
     exits: { 0: 'ok' },
     result: { catalog: 'object' },
   },
+  'proxy-test': {
+    mutating: false,
+    // Диагностику запускают до того, как получили sudo, — иначе она бесполезна.
+    requiresRoot: false,
+    flags: [...NETWORKING, ...COMMON],
+    exits: { 0: 'ok', 1: 'proxy-unreachable' },
+    result: { proxy: 'string', ok: 'number', warnings: 'number', critical: 'number', findings: 'array' },
+  },
+
   version: { mutating: false, requiresRoot: false, flags: ['json', 'help'], exits: { 0: 'ok' }, result: { version: 'string' } },
   help:    { mutating: false, requiresRoot: false, flags: ['lang', 'json'], exits: { 0: 'ok' }, result: null },
 };
