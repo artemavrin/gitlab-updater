@@ -1,0 +1,395 @@
+<title>Настройки gitlab-upgrade</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  :root{ --page:#e6e8ec; --muted:#5c6572; --line:#d0d5dc; }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){ --page:#0b0e12; --muted:#79838f; --line:#20262e; }
+  }
+  :root[data-theme="dark"]{ --page:#0b0e12; --muted:#79838f; --line:#20262e; }
+  :root{
+    --t-bg:#10141a; --t-bar:#171c24; --t-fg:#d4dae2; --t-dim:#79838f;
+    --t-ok:#7cc394; --t-warn:#dda94c; --t-crit:#e77a7a; --t-acc:#61b7c9;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh; background:var(--page);
+    font-family:"JetBrains Mono", ui-monospace, monospace;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:.75rem; padding:5.5rem 1rem 3rem;
+  }
+  .term{
+    width:min(100%, 44rem); background:var(--t-bg);
+    border-radius:12px; overflow:hidden;
+    border:1px solid rgba(255,255,255,.06);
+    box-shadow:0 1px 2px rgba(0,0,0,.2), 0 24px 60px -24px rgba(0,0,0,.5);
+  }
+  .termbar{
+    display:flex; align-items:center; gap:.75rem;
+    padding:.625rem .875rem; background:var(--t-bar);
+    border-bottom:1px solid rgba(255,255,255,.05);
+  }
+  .dots{ display:flex; gap:6px; }
+  .dots i{ width:10px; height:10px; border-radius:50%; background:#2c333d; }
+  .cmd{ font-size:.75rem; color:var(--t-dim); }
+  .cmd b{ color:var(--t-fg); font-weight:500; }
+  #stage{
+    height:32rem; overflow-y:auto; padding:.75rem 0;
+    font-size:12.5px; line-height:1.5; color:var(--t-fg);
+    font-variant-ligatures:none; font-feature-settings:"liga" 0,"calt" 0;
+    font-variant-numeric:tabular-nums;
+  }
+  .ln{ white-space:pre; padding:0 1rem; min-height:1.5em; }
+  .ok{color:var(--t-ok)} .warn{color:var(--t-warn)} .crit{color:var(--t-crit)}
+  .acc{color:var(--t-acc)} .dim{color:var(--t-dim)} .b{font-weight:700}
+  .sp{ display:inline-block; width:1ch; color:var(--t-acc); }
+  .cur{ display:inline-block; width:1ch; background:var(--t-fg); color:var(--t-bg);
+        animation:blink 1s steps(1,end) infinite; }
+  @keyframes blink{ 50%{ background:transparent; color:var(--t-fg); } }
+  .hint{ font-size:.75rem; color:var(--muted); text-align:center; }
+  .hint kbd{ font:inherit; border:1px solid var(--line); border-radius:4px; padding:1px 5px; margin:0 1px; }
+  @media (prefers-reduced-motion: reduce){ .cur{ animation:none; } }
+
+  /* ── ПИКЕР — спецификация, не дизайн-решение ── */
+  .proto-picker {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    z-index: 2147483647; display: flex; align-items: center; gap: 2px; padding: 4px;
+    border-radius: 999px; background: rgba(10, 10, 10, 0.82);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+    backdrop-filter: blur(12px) saturate(1.4);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+      0 8px 24px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.12);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px; line-height: 1; -webkit-font-smoothing: antialiased;
+    user-select: none; -webkit-user-select: none;
+  }
+  .proto-picker-highlight {
+    position: absolute; top: 4px; left: 0; height: 28px;
+    border-radius: 999px; background: rgba(255, 255, 255, 0.12); will-change: transform;
+  }
+  .proto-picker[data-ready] .proto-picker-highlight {
+    transition: transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
+                width 250ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .proto-picker[data-ready] .proto-picker-highlight { transition: none; }
+  }
+  .proto-picker-item {
+    position: relative; display: flex; align-items: center; height: 28px;
+    padding: 0 12px; border: 0; border-radius: 999px; background: transparent;
+    color: rgba(255, 255, 255, 0.55); font: inherit; cursor: pointer;
+    transition: color 150ms ease-out;
+  }
+  .proto-picker-item:hover { color: rgba(255, 255, 255, 0.85); }
+  .proto-picker-item:active { transform: scale(0.97); }
+  .proto-picker-item:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.4); outline-offset: 2px; }
+  .proto-picker-item[data-active] { color: #fff; }
+  .proto-picker-divider { width: 1px; height: 16px; margin: 0 4px; background: rgba(255, 255, 255, 0.12); }
+  .proto-picker-replay { padding: 0 10px; font-size: 14px; }
+  .proto-picker[data-position="top"] { bottom: auto; top: 24px; }
+</style>
+
+<div class="term">
+  <div class="termbar">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="cmd"><b>sudo gitlab-upgrade config</b> <span class="dim">· 78×30</span></div>
+  </div>
+  <div id="stage"></div>
+</div>
+<p class="hint"><kbd>↑</kbd><kbd>↓</kbd> навигация · <kbd>Enter</kbd> изменить · <kbd>t</kbd> проверить · <kbd>Esc</kbd> назад</p>
+
+<nav class="proto-picker" data-position="top" aria-label="Prototype variants">
+  <span class="proto-picker-highlight" aria-hidden="true"></span>
+  <button class="proto-picker-item" data-active aria-current="true">Список</button>
+  <button class="proto-picker-item">Разделы</button>
+  <button class="proto-picker-item">Оглавление</button>
+  <span class="proto-picker-divider" aria-hidden="true"></span>
+  <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
+</nav>
+
+<script>
+const stage = document.getElementById('stage');
+const FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
+let fi = 0;
+setInterval(() => {
+  fi = (fi + 1) % FRAMES.length;
+  document.querySelectorAll('.sp').forEach(e => e.textContent = FRAMES[fi]);
+}, 80);
+
+let timers = [];
+function clearTimers(){ timers.forEach(id => { clearTimeout(id); clearInterval(id); }); timers = []; }
+function at(ms, fn){ timers.push(setTimeout(fn, ms)); }
+
+const W = 78;
+const len = s => [...s.replace(/<[^>]*>/g, '')].length;
+const pad = (s, n) => s + ' '.repeat(Math.max(0, n - len(s)));
+const two = (l, r) => pad(l, Math.max(len(l) + 1, W - len(r))) + r;
+const spin = () => '<span class="sp">' + FRAMES[fi] + '</span>';
+function row(html){
+  const d = document.createElement('div');
+  d.className = 'ln';
+  d.innerHTML = html === undefined ? '' : html;
+  stage.appendChild(d);
+  return d;
+}
+
+/* ═══════════ настройки: одни и те же данные во всех трёх ═══════════ */
+const GROUPS = [
+  { n:'Сеть', sum:'socks5h://10.0.0.5:1080 · проверен 2 мин назад', f:[
+    { k:'прокси',       v:'socks5h://10.0.0.5:1080',    s:'конфиг', st:'✓ работает', stc:'ok',
+      h:['HTTP или SOCKS5. Через него ходит только apt',
+         'к packages.gitlab.com — остальное напрямую.'] },
+    { k:'авторизация',  v:'gitlab-svc / ••••••••',      s:'конфиг', st:'', h:[] },
+    { k:'режим',        v:'auto → bridge',              s:'авто',   st:'', stc:'dim',
+      h:['native socks5h не прошёл, поднят локальный мост.'] },
+    { k:'CA прокси',    v:'не задан',                   s:'—',      st:'', stc:'dim',
+      h:['Нужен, если прокси перехватывает TLS.'] },
+    { k:'область',      v:'только packages.gitlab.com', s:'дефолт', st:'', h:[] }
+  ], test:[['TCP 10.0.0.5:1080','12 мс'],['SOCKS5 handshake','username/password'],
+           ['CONNECT packages.gitlab.com','443'],['TLS','сертификат валиден'],
+           ['apt через прокси','47 версий gitlab-ee']] },
+
+  { n:'Уведомления', sum:'Telegram настроен · Slack и webhook не заданы', f:[
+    { k:'Telegram',     v:'bot 7712…4Xk → chat -100293…', s:'env', st:'✓ доставлено', stc:'ok',
+      h:['TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID из env.'] },
+    { k:'Slack',        v:'не задан',                   s:'—',      st:'', stc:'dim', h:[] },
+    { k:'Webhook',      v:'не задан',                   s:'—',      st:'', stc:'dim', h:[] },
+    { k:'события',      v:'старт, шаг, ошибка, финиш',  s:'дефолт', st:'', h:[] },
+    { k:'маршрут',      v:'через основной прокси',      s:'дефолт', st:'', h:[] }
+  ], test:[['Telegram getMe','бот gitlab_upgrade_bot'],['отправка сообщения','доставлено в чат']] },
+
+  { n:'Бэкап', sum:'/mnt/backup/gitlab · 240 ГБ свободно', f:[
+    { k:'каталог',      v:'/mnt/backup/gitlab',         s:'конфиг', st:'240 ГБ своб.', stc:'dim', h:[] },
+    { k:'режим',        v:'полный, затем быстрый', s:'дефолт', st:'', stc:'dim',
+      h:['Быстрый пропускает registry, artifacts, uploads,',
+         'lfs и packages — апгрейд их не трогает.'] },
+    { k:'hook',         v:'/root/snapshot.sh',          s:'флаг',   st:'✓ исполняем', stc:'ok',
+      h:['Снапшот LVM или VM — единственный откат.'] }
+  ], test:[['каталог доступен на запись','ok'],['свободно','240 ГБ'],['hook','исполняемый']] },
+
+  { n:'Пороги и цель', sum:'мин. 10 ГБ · до 17.11.6-ee, 6 шагов', f:[
+    { k:'мин. свободно',v:'10 ГБ',                      s:'флаг',   st:'', h:[] },
+    { k:'предзагрузка', v:'включена, 6.6 ГБ',           s:'авто',   st:'', stc:'dim',
+      h:['Включается сама, когда настроен прокси.'] },
+    { k:'цель',         v:'17.11.6-ee',                 s:'авто',   st:'потолок ОС', stc:'warn',
+      h:['Выше не поднимаемся: Ubuntu 22.04.'] },
+    { k:'health-check', v:'включён',                    s:'дефолт', st:'', h:[] }
+  ], test:[['место /var/opt/gitlab','142 ГБ'],['место /','61 ГБ'],['пакеты в репозитории','6 из 6']] }
+];
+
+const ST = { g:0, f:0, pane:'g', drill:false, edit:false, buf:'', test:null };
+const srcHtml = s => '<span class="dim">' + pad(s, 9) + '</span>';
+const stHtml  = f => f.st ? '<span class="' + (f.stc || 'dim') + '">' + f.st + '</span>' : '';
+const valOf = (f, active) => (ST.edit && active) ? ST.buf + '<span class="cur"> </span>' : f.v;
+
+function head(){
+  row(two(' <span class="b">Настройки</span>', '<span class="dim">/etc/gitlab-upgrade/config.json</span>   '));
+  row();
+}
+function testLines(indent){
+  if (!ST.test) return;
+  row();
+  ST.test.done.forEach(l => row(indent + '<span class="ok">✓</span> ' + pad(l[0], 30) +
+    '<span class="dim">' + l[1] + '</span>'));
+  if (ST.test.cur) row(indent + spin() + ' ' + pad(ST.test.cur, 30));
+  if (ST.test.fin) row(indent + '<span class="ok">все проверки пройдены</span>');
+}
+function foot(txt){ row(); row(' <span class="dim">' + txt + '</span>'); }
+
+/* ── A · Список: всё на одном экране, правка на месте ── */
+function viewList(){
+  head();
+  row('   <span class="dim">' + pad('настройка', 15) + pad('значение', 30) +
+      pad('источник', 9) + 'состояние</span>');
+  GROUPS.forEach((g, gi) => {
+    row();
+    row(' <span class="b">' + g.n + '</span>');
+    g.f.forEach((f, idx) => {
+      const active = gi === ST.g && idx === ST.f;
+      row((active ? '<span class="acc">▸</span>' : ' ') + '  ' + pad(f.k, 15) +
+        (active ? '<span class="acc">' + pad(valOf(f, true), 30) + '</span>' : pad(f.v, 30)) +
+        srcHtml(f.s) + stHtml(f));
+    });
+  });
+  testLines('   ');
+  foot(ST.edit ? 'Enter сохранить · Esc отменить'
+               : '↑↓ поле · Enter изменить · [t] проверить раздел');
+}
+
+/* ── B · Разделы: две колонки, слева разделы, справа поля ── */
+function viewPanes(){
+  head();
+  const g = GROUPS[ST.g];
+  const left = GROUPS.map((x, i) =>
+    (i === ST.g ? '<span class="acc">▸</span>' : ' ') + ' ' +
+    (i === ST.g ? '<span class="acc b">' : '<span class="dim">') + pad(x.n, 15) + '</span>');
+  const right = g.f.map((f, i) => {
+    const active = ST.pane === 'f' && i === ST.f;
+    return (active ? '<span class="acc">▸</span>' : ' ') + ' ' + pad(f.k, 14) +
+      (active ? '<span class="acc">' + pad(valOf(f, true), 28) + '</span>' : pad(f.v, 28)) +
+      srcHtml(f.s);
+  });
+  const n = Math.max(left.length, right.length);
+  for (let i = 0; i < n; i++)
+    row(' ' + pad(left[i] || '', 19) + '<span class="dim">│</span> ' + (right[i] || ''));
+  const cur = g.f[Math.min(ST.f, g.f.length - 1)];
+  if (cur && cur.h.length){
+    row(' ' + pad('', 19) + '<span class="dim">│</span>');
+    cur.h.forEach(h => row(' ' + pad('', 19) + '<span class="dim">│   ' + h + '</span>'));
+  }
+  testLines(' ' + pad('', 19) + '<span class="dim">│</span>   ');
+  foot(ST.edit ? 'Enter сохранить · Esc отменить'
+               : (ST.pane === 'g' ? '↑↓ раздел · → перейти к полям · [t] проверить раздел'
+                                  : '↑↓ поле · Enter изменить · ← к разделам · [t] проверить'));
+}
+
+/* ── C · Оглавление: индекс, раздел открывается на весь экран ── */
+function viewIndex(){
+  if (!ST.drill){
+    head();
+    GROUPS.forEach((g, i) => row(
+      (i === ST.g ? '<span class="acc">▸</span>' : ' ') + '  <span class="ok">✓</span>  ' +
+      (i === ST.g ? '<span class="acc b">' : '<span class="b">') + pad(g.n, 16) + '</span>' +
+      '<span class="dim">' + g.sum + '</span>'));
+    row();
+    row('   <span class="ok">Всё настроено.</span> <span class="dim">Готово к запуску:</span>');
+    row('     <span class="acc">sudo gitlab-upgrade run --yes --detach</span>');
+    testLines('   ');
+    foot('↑↓ раздел · Enter открыть раздел · [t] проверить раздел');
+    return;
+  }
+  const g = GROUPS[ST.g];
+  row(two(' <span class="b">Настройки</span> <span class="dim">›</span> <span class="b">' + g.n + '</span>',
+          '<span class="dim">Esc назад</span>   '));
+  row();
+  g.f.forEach((f, i) => {
+    const active = i === ST.f;
+    row((active ? '<span class="acc">▸</span>' : ' ') + '  ' + pad(f.k, 15) +
+      (active ? '<span class="acc">' + pad(valOf(f, true), 31) + '</span>' : pad(f.v, 31)) +
+      srcHtml(f.s) + stHtml(f));
+    if (active && f.h.length){
+      f.h.forEach(h => row('   ' + pad('', 15) + '<span class="dim">' + h + '</span>'));
+      row();
+    }
+  });
+  testLines('   ');
+  foot(ST.edit ? 'Enter сохранить · Esc отменить'
+               : '↑↓ поле · Enter изменить · [t] проверить · Esc назад');
+}
+
+/* ═══════════ проверка настроек на месте ═══════════ */
+function runTest(){
+  clearTimers();
+  const seq = GROUPS[ST.g].test;
+  ST.test = { done: [], cur: seq[0][0], fin: false };
+  render();
+  seq.forEach((s, i) => at(650 * (i + 1), () => {
+    ST.test.done.push(s);
+    ST.test.cur = seq[i + 1] ? seq[i + 1][0] : null;
+    if (!seq[i + 1]) ST.test.fin = true;
+    render();
+  }));
+}
+
+/* ═══════════ рендер и клавиши ═══════════ */
+const VIEWS = [viewList, viewPanes, viewIndex];
+let view = 0;
+function render(){ stage.innerHTML = ''; VIEWS[view](); }
+const fieldsLen = () => GROUPS[ST.g].f.length;
+
+function flatMove(d){
+  let g = ST.g, f = ST.f + d;
+  while (f < 0){ g = (g - 1 + GROUPS.length) % GROUPS.length; f += GROUPS[g].f.length; }
+  while (f >= GROUPS[g].f.length){ f -= GROUPS[g].f.length; g = (g + 1) % GROUPS.length; }
+  ST.g = g; ST.f = f;
+}
+
+function handleKey(e){
+  if (ST.edit){
+    if (e.key === 'Enter'){ GROUPS[ST.g].f[ST.f].v = ST.buf || 'не задан'; ST.edit = false; }
+    else if (e.key === 'Escape') ST.edit = false;
+    else if (e.key === 'Backspace') ST.buf = ST.buf.slice(0, -1);
+    else if (e.key.length === 1) ST.buf += e.key;
+    else return true;
+    e.preventDefault(); render(); return true;
+  }
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown'){
+    const d = e.key === 'ArrowDown' ? 1 : -1;
+    if (view === 0) flatMove(d);
+    else if (view === 1){
+      if (ST.pane === 'g'){ ST.g = (ST.g + d + GROUPS.length) % GROUPS.length; ST.f = 0; }
+      else ST.f = Math.min(fieldsLen() - 1, Math.max(0, ST.f + d));
+    } else if (ST.drill) ST.f = Math.min(fieldsLen() - 1, Math.max(0, ST.f + d));
+    else { ST.g = (ST.g + d + GROUPS.length) % GROUPS.length; ST.f = 0; }
+    ST.test = null; e.preventDefault(); render(); return true;
+  }
+  if (view === 1 && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')){
+    ST.pane = e.key === 'ArrowRight' ? 'f' : 'g';
+    e.preventDefault(); render(); return true;
+  }
+  if (e.key === 'Enter'){
+    if (view === 2 && !ST.drill){ ST.drill = true; ST.f = 0; }
+    else { ST.edit = true; ST.buf = GROUPS[ST.g].f[ST.f].v; }
+    ST.test = null; e.preventDefault(); render(); return true;
+  }
+  if (e.key === 'Escape'){
+    if (view === 2 && ST.drill){ ST.drill = false; ST.test = null; render(); }
+    e.preventDefault(); return true;
+  }
+  if (e.key === 't' || e.key === 'T'){ runTest(); e.preventDefault(); return true; }
+  return false;
+}
+
+/* ═══════════ пикер ═══════════ */
+const variants = [() => { view = 0; }, () => { view = 1; }, () => { view = 2; }];
+const picker = document.querySelector('.proto-picker');
+const highlight = picker.querySelector('.proto-picker-highlight');
+const items = [...picker.querySelectorAll('.proto-picker-item:not(.proto-picker-replay)')];
+const replay = picker.querySelector('.proto-picker-replay');
+let current = 0;
+
+function moveHighlight() {
+  const el = items[current];
+  highlight.style.width = el.offsetWidth + 'px';
+  highlight.style.transform = `translateX(${el.offsetLeft}px)`;
+}
+function mount(i) {
+  stage.innerHTML = '';
+  requestAnimationFrame(() => {
+    clearTimers();
+    ST.g = 0; ST.f = 0; ST.pane = 'g'; ST.drill = false; ST.edit = false; ST.test = null;
+    variants[i]();
+    render();
+  });
+}
+function setActive(i) {
+  if (i < 0 || i >= variants.length) return;
+  current = i;
+  items.forEach((el, j) => {
+    el.toggleAttribute('data-active', j === i);
+    if (j === i) el.setAttribute('aria-current', 'true');
+    else el.removeAttribute('aria-current');
+  });
+  moveHighlight();
+  const url = new URL(location);
+  url.searchParams.set('v', i + 1);
+  history.replaceState(null, '', url);
+  mount(i);
+}
+items.forEach((el, i) => el.addEventListener('click', () => setActive(i)));
+replay?.addEventListener('click', () => mount(current));
+window.addEventListener('resize', moveHighlight);
+
+document.addEventListener('keydown', (e) => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (handleKey(e)) return;
+  const num = parseInt(e.key, 10);
+  if (num >= 1 && num <= variants.length) setActive(num - 1);
+  else if (e.key === 'r' || e.key === 'R') mount(current);
+});
+
+setActive((parseInt(new URLSearchParams(location.search).get('v'), 10) || 1) - 1);
+requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
+</script>
