@@ -13,9 +13,11 @@ import { commandPlan } from '../src/commands/plan.js';
 import { commandRefreshPath } from '../src/commands/refreshPath.js';
 import { commandNext } from '../src/commands/next.js';
 import { commandDoctor } from '../src/commands/doctor.js';
+import { commandRun, commandResume } from '../src/commands/run.js';
 import { detectOs } from '../src/detect/os.js';
 import { detectGitlab } from '../src/detect/gitlab.js';
 import { EXIT } from '../src/plan/planner.js';
+import { writeAptConf, aptConfPath, removeAptConf } from '../src/net/aptProxy.js';
 
 import pkg from '../package.json' with { type: 'json' };
 import upgradePath from '../data/upgrade-path.json' with { type: 'json' };
@@ -29,7 +31,10 @@ for (const stream of [process.stdout, process.stderr]) {
   stream.on('error', (err) => { if (err.code === 'EPIPE') process.exit(0); });
 }
 
-const RUNNERS = { check: commandCheck, next: commandNext, plan: commandPlan, doctor: commandDoctor, 'refresh-path': commandRefreshPath };
+const RUNNERS = {
+  check: commandCheck, next: commandNext, plan: commandPlan, doctor: commandDoctor,
+  run: commandRun, resume: commandResume, 'refresh-path': commandRefreshPath,
+};
 
 async function main(argv) {
   const early = createTranslator(resolveLocale({}));
@@ -56,7 +61,14 @@ async function main(argv) {
   }
 
   const { values: config, sources } = resolveConfig({
-    flags: { proxy: flags.proxy, proxyCa: flags.proxyCa, lang: flags.lang },
+    flags: {
+      proxy: flags.proxy, proxyCa: flags.proxyCa, lang: flags.lang,
+      // Без этого значение из конфига разрешалось бы, показывалось
+      // в --explain-config и молча игнорировалось.
+      proxyAllApt: flags.proxyAllApt || undefined,
+      backupDir: flags.backupDir ?? undefined,
+      backupHook: flags.backupHook ?? undefined,
+    },
     path: flags.configPath ?? undefined,
   });
 
@@ -70,9 +82,31 @@ async function main(argv) {
   // События идут на stderr, чтобы не смешиваться с результатом на stdout.
   if (flags.events) bus.on(createJsonRenderer({ out: process.stderr, secrets }));
 
-  const exec = createExec({ mode: MODE.REAL, bus, secrets });
+  // --dry-run пропускает изменяющие команды, но выполняет читающие:
+  // иначе план был бы построен на выдуманных данных.
+  const exec = createExec({ mode: flags.dryRun ? MODE.DRY : MODE.REAL, bus, secrets });
+
+  // Прокси обязан реально дойти до apt. Настройки уходят во временный файл,
+  // передаваемый через `apt-get -c`, а не в /etc/apt/apt.conf.d/: после kill -9
+  // система не остаётся перенастроенной, и пароль не виден в `ps aux`.
+  let confPath = null;
+  if (config.proxy) {
+    try {
+      confPath = writeAptConf(aptConfPath(config.stateDir), {
+        proxy: config.proxy, all: config.proxyAllApt, ca: config.proxyCa ?? null,
+      });
+    } catch (err) {
+      // Молча ходить мимо прокси нельзя: на закрытом контуре это тихий провал.
+      const envelope = fail(command, {
+        version: VERSION, exit: EXIT.ERROR,
+        code: 'proxy-conf-unwritable', message: t('error.proxyConf', { path: config.stateDir, detail: err.code ?? err.message }),
+      });
+      return emit(envelope, [t('error.proxyConf', { path: config.stateDir, detail: err.code ?? err.message })]);
+    }
+  }
+
   const ctx = {
-    exec, t, flags, config, bus,
+    exec, t, flags, config, bus, confPath,
     data: { upgradePath, osMatrix, pgRequirements },
     osPath: '/etc/os-release',
     dataPath: new URL('../data/upgrade-path.json', import.meta.url).pathname,
@@ -80,7 +114,13 @@ async function main(argv) {
   ctx.os = detectOs(ctx.osPath);
   ctx.gitlabInfo = await detectGitlab(exec).catch(() => null);
 
-  const result = await RUNNERS[command](ctx);
+  let result;
+  try {
+    result = await RUNNERS[command](ctx);
+  } finally {
+    if (confPath) removeAptConf(confPath);
+  }
+
   const envelope = result.code === EXIT.ERROR
     ? fail(command, {
         version: VERSION, exit: result.code,

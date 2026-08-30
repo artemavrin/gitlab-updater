@@ -1,4 +1,10 @@
 import { COMMANDS, COMMAND_NAMES, FLAGS, DEFAULT_COMMAND } from './registry.js';
+import { LOCALES, DEFAULT_LOCALE } from '../i18n/index.js';
+
+const errorCodeKeys = () => Object.keys(LOCALES[DEFAULT_LOCALE])
+  .filter((k) => k.startsWith('error.code.'))
+  .map((k) => k.slice('error.code.'.length))
+  .sort();
 
 /**
  * Машинный каталог для агентов: `gitlab-upgrade api` либо `--help --json`.
@@ -20,8 +26,9 @@ export function buildCatalog(t, { version }) {
       mutating: COMMAND_NAMES.filter((n) => COMMANDS[n].mutating),
       notes: [t('api.note.exitCodes'), t('api.note.envelope'), t('api.note.events'), t('api.note.ids')],
     },
-    errorCodes: Object.fromEntries(['os-unreadable', 'os-unsupported', 'gitlab-not-found', 'repository-unreachable', 'precondition-failed']
-      .map((code) => [code, t(`error.code.${code}`)])),
+    // Список выводится из локалей, а не дублируется здесь: захардкоженный
+    // перечень молча отстал бы от кодов, которые команды реально возвращают.
+    errorCodes: Object.fromEntries(errorCodeKeys().map((code) => [code, t(`error.code.${code}`)])),
     envelope: {
       tool: 'string', version: 'string', command: 'string',
       ok: 'boolean', exit: 'number',

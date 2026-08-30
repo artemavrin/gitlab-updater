@@ -44,7 +44,7 @@ export async function commandRefreshPath({ t, flags, config, data, dataPath, fet
   if (removed.length) lines.push(`   − ${t('refresh.removed')}: ${removed.join(', ')}`);
   lines.push('');
 
-  if (!flags.yes) {
+  if (!flags.yes || flags.dryRun) {
     lines.push(` ${t('refresh.dryRun')}`, '');
     return { code: 0, lines, result };
   }

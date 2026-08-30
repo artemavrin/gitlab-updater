@@ -31,8 +31,13 @@ export function writeAptConf(path, opts) {
   return path;
 }
 
-export function aptConfPath(stateDir) {
-  return join(stateDir, 'apt-proxy.conf');
+/**
+ * Путь свой у каждого процесса: общий файл удалялся бы завершением любой
+ * параллельной команды — например, крон с `check` вынес бы конфиг из-под
+ * идущего многочасового `run`, и следующий apt упал бы на середине пути.
+ */
+export function aptConfPath(stateDir, pid = process.pid) {
+  return join(stateDir, `apt-proxy.${pid}.conf`);
 }
 
 export function removeAptConf(path) {

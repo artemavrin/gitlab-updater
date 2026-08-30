@@ -23,6 +23,7 @@ export const DEFAULTS = {
   proxyAllApt: false,
   lang: null,
   backupDir: '/var/opt/gitlab/backups',
+  backupHook: null,
   minFreeGb: 5,
   configPath: CONFIG_PATH,
   stateDir: STATE_DIR,

@@ -143,6 +143,11 @@ test('каждый код ошибки описан в каталоге', () => 
     assert.notEqual(text, `error.code.${code}`, `нет описания кода ${code}`);
   }
   assert.ok(Object.hasOwn(c.errorCodes, 'repository-unreachable'));
+  // Перечень выводится из локалей: захардкоженный список молча отстал бы
+  // от кодов, которые команды реально возвращают.
+  for (const code of ['migrations-failed', 'already-running', 'step-failed', 'package-unknown']) {
+    assert.ok(Object.hasOwn(c.errorCodes, code), `в каталоге нет кода ${code}`);
+  }
 });
 
 test('недоступный репозиторий даёт конкретный код, а не общий', async () => {

@@ -1,0 +1,397 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createExec, MODE } from '../src/core/exec.js';
+import { createTranslator } from '../src/i18n/index.js';
+import { commandRun, commandResume } from '../src/commands/run.js';
+import { loadState, saveState, statePath } from '../src/core/state.js';
+import { acquireLock } from '../src/core/lock.js';
+import { EXIT } from '../src/plan/planner.js';
+import { COMMANDS } from '../src/cli/registry.js';
+import { MIGRATION_QUERY } from '../src/steps/settle.js';
+import { skipList, MODE as BACKUP } from '../src/steps/backup.js';
+import { fixturesFor, checkFixtures, ctlStatusHealthy, osReleaseJammy } from './fixtures/index.js';
+
+const data = {
+  upgradePath: JSON.parse(readFileSync('data/upgrade-path.json', 'utf8')),
+  osMatrix: JSON.parse(readFileSync('data/os-matrix.json', 'utf8')),
+  pgRequirements: JSON.parse(readFileSync('data/pg-requirements.json', 'utf8')),
+};
+const STAMP = '20260831-0900';
+
+const tickingClock = () => {
+  let t = 0;
+  return { now: () => t, wait: async (ms) => { t += ms; } };
+};
+const RUNNER = `gitlab-rails runner -e production ${MIGRATION_QUERY}`;
+
+function bed({ version = '17.11.4-ee.0', extra = {}, flags = {} } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'glu-run-'));
+  writeFileSync(join(dir, 'os-release'), osReleaseJammy);
+  const calls = [];
+  const fixtures = {
+    ...fixturesFor({ version }), ...checkFixtures(),
+    'apt-get update': { code: 0, stdout: '' },
+    'gitlab-ctl status': { code: 0, stdout: ctlStatusHealthy },
+    [RUNNER]: { code: 0, stdout: '0 0' },
+    'apt-mark hold gitlab-ee': { code: 0, stdout: '' },
+    ...extra,
+  };
+  const base = createExec({ mode: MODE.REPLAY, fixtures });
+  // Значение-массив отдаётся по одному ответу за вызов: так проверяется
+  // разница между «сломано до старта» и «сломалось во время шага».
+  const queues = new Map(Object.entries(fixtures)
+    .filter(([, v]) => Array.isArray(v))
+    .map(([k, v]) => [k, [...v]]));
+  const exec = async (argv, opts) => {
+    const key = argv.join(' ');
+    calls.push(key);
+    if (queues.has(key)) {
+      const q = queues.get(key);
+      return q.length > 1 ? q.shift() : q[0];
+    }
+    // Явно заданная фикстура всегда побеждает заглушку.
+    if (Object.hasOwn(fixtures, key)) return base(argv, opts);
+    // Изменяющие команды шага не записаны в фикстуры: важен факт и порядок вызова.
+    if (/^(mkdir|cp|chmod|apt-get install|apt-mark|grep|\/root\/)/.test(key)) return { code: 0, stdout: '' };
+    if (key.startsWith('gitlab-backup')) {
+      return { code: 0, stdout: 'Creating backup archive: 1756600000_2026_08_31_17.11.4_gitlab_backup.tar [DONE]' };
+    }
+    return base(argv, opts);
+  };
+  return {
+    dir, calls,
+    ctx: {
+      exec, bus: null, t: createTranslator('ru'), data,
+      osPath: join(dir, 'os-release'),
+      config: { stateDir: dir, backupDir: join(dir, 'backups'), minFreeGb: 5, proxy: null },
+      flags: {
+        from: null, to: null, targetMajor: null, safeForOs: false, patchOnly: false,
+        force: false, minFreeGb: null, yes: true, backupHook: null, ...flags,
+      },
+      uid: 0, env: {}, isTty: false,
+      gitlabInfo: { package: 'gitlab-ee', edition: 'ee', aptVersion: version },
+      stamp: () => STAMP,
+      // Часы обязаны идти: замороженные превращают ожидание в вечный цикл.
+      settle: { ...tickingClock(), intervalMs: 1_000, timeoutMs: 60_000 },
+    },
+  };
+}
+
+test('патч выполняется целиком: бэкап, установка, ожидание, закрепление', async () => {
+  const { ctx, calls, dir } = bed();
+  const r = await commandRun(ctx);
+  assert.equal(r.code, EXIT.CURRENT, r.lines.join('\n'));
+  assert.equal(r.result.target, '17.11.6-ee.0');
+
+  const order = calls.filter((c) => /^(gitlab-backup|apt-get install|apt-mark)/.test(c));
+  assert.match(order[0], /^apt-mark unhold/, 'без снятия hold установка упадёт уже после бэкапа');
+  assert.match(order[1], /^gitlab-backup/, 'бэкап обязан быть до установки');
+  assert.match(order[2], /gitlab-ee=17\.11\.6-ee\.0/);
+  assert.match(order[3], /^apt-mark hold/);
+  assert.equal(loadState(dir).state, null, 'состояние обязано очиститься после успеха');
+});
+
+test('патч бэкапит только базу и конфиги, а не 187 ГБ блобов', async () => {
+  const { ctx, calls } = bed();
+  await commandRun(ctx);
+  const backup = calls.find((c) => c.startsWith('gitlab-backup'));
+  assert.match(backup, /SKIP=/);
+  for (const c of skipList(BACKUP.DB)) assert.ok(backup.includes(c), `${c} должен быть в SKIP`);
+  assert.ok(!/STRATEGY=copy/.test(backup), 'полная стратегия для патча — восемьдесят минут впустую');
+});
+
+test('без --yes ничего не меняется', async () => {
+  const { ctx, calls } = bed({ flags: { yes: false } });
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'confirmation-required');
+  assert.ok(!calls.some((c) => /^(gitlab-backup|apt-get install)/.test(c)), 'выполнены изменяющие команды без --yes');
+});
+
+test('критическая проверка не пускает к установке', async () => {
+  const { ctx, calls } = bed({ extra: { 'test -f /etc/gitlab/gitlab-secrets.json': { code: 1, stdout: '' } } });
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'checks-failed');
+  assert.ok(!calls.some((c) => c.startsWith('apt-get install')));
+});
+
+test('предупреждения останавливают, пока не сказано --force', async () => {
+  const warned = { 'systemctl is-active apt-daily.timer': { code: 0, stdout: 'active' } };
+  const strict = bed({ extra: warned });
+  assert.equal((await commandRun(strict.ctx)).errorCode, 'warnings-not-accepted');
+  const forced = bed({ extra: warned, flags: { force: true } });
+  assert.equal((await commandRun(forced.ctx)).code, EXIT.CURRENT);
+});
+
+/**
+ * Упавшая миграция — единственная остановка, которую не снимает ничто:
+ * следующий шаг мигрировал бы поверх незавершённых данных.
+ */
+test('упавшая миграция до старта не пускает к установке вовсе', async () => {
+  const { ctx, calls } = bed({ extra: { [RUNNER]: { code: 0, stdout: '0 1' } } });
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'checks-failed');
+  assert.ok(!calls.some((c) => c.startsWith('apt-get install')), 'установка началась поверх упавшей миграции');
+});
+
+test('упавшая во время шага миграция останавливает и оставляет состояние для resume', async () => {
+  // Перед стартом чисто, падение случается уже после установки.
+  const { ctx, dir } = bed({ extra: { [RUNNER]: [{ code: 0, stdout: '0 0' }, { code: 0, stdout: '3 1' }] } });
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'migrations-failed');
+  assert.match(r.lines.join('\n'), /ОСТАНОВЛЕНО/);
+  const { state } = loadState(dir);
+  assert.ok(state, 'состояние обязано остаться — иначе resume невозможен');
+  assert.equal(state.phase, 'settle');
+  assert.equal(state.expectedVersion, '17.11.6-ee.0');
+});
+
+test('не поднявшиеся после установки сервисы останавливают до следующего шага', async () => {
+  const { ctx } = bed({
+    version: '15.11.13-ee.0',
+    extra: { 'gitlab-ctl status': [{ code: 0, stdout: ctlStatusHealthy }, { code: 1, stdout: '' }] },
+    flags: { force: true },
+  });
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'services-down');
+});
+
+test('второй экземпляр не запускается поверх первого', async () => {
+  const { ctx, dir } = bed();
+  const held = acquireLock(join(dir, 'lock'), { pid: process.pid + 1 });
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'already-running');
+  held.release();
+});
+
+test('замок освобождается даже когда шаг упал', async () => {
+  const { ctx, dir } = bed({ extra: { [RUNNER]: [{ code: 0, stdout: '0 0' }, { code: 0, stdout: '0 2' }] } });
+  await commandRun(ctx);
+  assert.equal(existsSync(join(dir, 'lock')), false, 'замок остался висеть после ошибки');
+});
+
+test('resume без сохранённого состояния не выдумывает работу', async () => {
+  const { ctx } = bed();
+  const r = await commandResume(ctx);
+  assert.equal(r.errorCode, 'no-state');
+});
+
+/**
+ * Между падением и resume сервер могли обновить руками — сохранённый план
+ * тогда рассчитан не от той версии.
+ */
+test('resume отказывается продолжать при расхождении версии', async () => {
+  const { ctx, dir } = bed({ version: '17.11.6-ee.0' });
+  saveState(dir, {
+    pkg: 'gitlab-ee', edition: 'ee', expectedVersion: '16.11.10-ee.0',
+    steps: [{ version: '17.11.6-ee.0' }], stepIndex: 0, phase: 'settle', backups: [],
+  });
+  ctx.gitlabInfo = { package: 'gitlab-ee', edition: 'ee', aptVersion: '17.11.6-ee.0' };
+  const r = await commandResume(ctx);
+  assert.equal(r.errorCode, 'resume-version-mismatch');
+  assert.match(r.lines.join('\n'), /plan --from/);
+  assert.ok(existsSync(statePath(dir)), 'состояние нельзя удалять при расхождении');
+});
+
+test('resume продолжает с сохранённого шага, а не начинает заново', async () => {
+  const { ctx, dir, calls } = bed({ version: '17.11.4-ee.0' });
+  saveState(dir, {
+    pkg: 'gitlab-ee', edition: 'ee', expectedVersion: '17.11.4-ee.0',
+    from: '17.11.4-ee.0', target: '17.11.6-ee.0', profile: 'patch',
+    steps: [{ version: '17.11.6-ee.0', reason: 'target' }],
+    stepIndex: 0, phase: 'backup', backups: [],
+  });
+  const r = await commandResume(ctx);
+  assert.equal(r.code, EXIT.CURRENT);
+  assert.equal(calls.filter((c) => c.startsWith('apt-get install')).length, 1);
+});
+
+test('состояние пишется до каждой фазы, а не после шага', async () => {
+  const phases = [];
+  const { ctx, dir } = bed();
+  const realExec = ctx.exec;
+  ctx.exec = async (argv, opts) => {
+    const s = loadState(dir).state;
+    if (s) phases.push(`${argv[0]}:${s.phase}`);
+    return realExec(argv, opts);
+  };
+  await commandRun(ctx);
+  assert.ok(phases.includes('gitlab-backup:backup'), 'фаза backup не записана до бэкапа');
+  assert.ok(phases.some((p) => p.startsWith('apt-get') && p.endsWith(':install')), 'фаза install не записана до установки');
+});
+
+/**
+ * Проверки на каждое исправление после ревью — иначе дефект вернётся
+ * при следующей правке, а обнаружится на боевом сервере.
+ */
+
+test('первый бэкап полный, последующие дешёвые: восемь полных — это восемь раз по 80 минут', async () => {
+  const { ctx, calls } = bed({ version: '15.11.13-ee.0', flags: { force: true } });
+  await commandRun(ctx);
+  const backups = calls.filter((c) => c.startsWith('gitlab-backup'));
+  assert.equal(backups.length, 8, 'ожидали по бэкапу на каждый шаг пути');
+  assert.match(backups[0], /STRATEGY=copy/, 'первый обязан быть полным');
+  for (const b of backups.slice(1)) {
+    assert.ok(!/STRATEGY=copy/.test(b), `лишний полный бэкап: ${b}`);
+    assert.ok(!b.includes('repositories'), 'быстрый бэкап сохраняет репозитории');
+  }
+});
+
+test('снятие hold идёт до установки, возврат — после последнего шага', async () => {
+  const { ctx, calls } = bed();
+  await commandRun(ctx);
+  const marks = calls.filter((c) => c.startsWith('apt-mark'));
+  assert.deepEqual(marks, ['apt-mark unhold gitlab-ee', 'apt-mark hold gitlab-ee']);
+});
+
+test('бэкап сообщает каталог дампа отдельно от каталога конфигов', async () => {
+  const { ctx } = bed();
+  const r = await commandRun(ctx);
+  const b = r.result.backups[0];
+  assert.match(b.configDir, /backups\/20260831-0900$/);
+  assert.equal(b.dumpDir, '/var/opt/gitlab/backups', 'дамп кладёт GitLab, а не мы');
+  assert.match(b.archive, /_gitlab_backup\.tar$/);
+});
+
+/**
+ * Нас убили после установки последнего шага: свежий план пуст, но миграции
+ * ещё не дождались и пакет не закреплён. Выйти с «обновляться некуда» —
+ * значит бросить инстанс в незавершённом состоянии.
+ */
+test('resume дожимает последний шаг, когда свежий план уже пуст', async () => {
+  const { ctx, dir, calls } = bed({ version: '17.11.6-ee.0' });
+  saveState(dir, {
+    pkg: 'gitlab-ee', edition: 'ee', expectedVersion: '17.11.6-ee.0',
+    from: '17.11.4-ee.0', target: '17.11.6-ee.0', profile: 'patch',
+    steps: [{ version: '17.11.6-ee.0', reason: 'target' }],
+    stepIndex: 0, phase: 'settle', backups: [],
+  });
+  const r = await commandResume(ctx);
+  assert.equal(r.code, EXIT.CURRENT, r.lines.join('\n'));
+  assert.ok(calls.some((c) => c === 'apt-mark hold gitlab-ee'), 'пакет остался незакреплённым');
+  assert.equal(loadState(dir).state, null);
+});
+
+test('resume после падения в середине установки принимает обе версии', async () => {
+  for (const onDisk of ['17.11.4-ee.0', '17.11.6-ee.0']) {
+    const { ctx, dir } = bed({ version: onDisk });
+    saveState(dir, {
+      pkg: 'gitlab-ee', edition: 'ee',
+      expectedVersion: '17.11.4-ee.0', installing: '17.11.6-ee.0',
+      from: '17.11.4-ee.0', target: '17.11.6-ee.0', profile: 'patch',
+      steps: [{ version: '17.11.6-ee.0', reason: 'target' }],
+      stepIndex: 0, phase: 'install', backups: [],
+    });
+    const r = await commandResume(ctx);
+    assert.notEqual(r.errorCode, 'resume-version-mismatch', `на диске ${onDisk}: resume отказал зря`);
+  }
+});
+
+test('resume не требует --force из-за миграций, ради которых его и запускают', async () => {
+  const { ctx, dir } = bed({ extra: { [RUNNER]: [{ code: 0, stdout: '4 0' }, { code: 0, stdout: '0 0' }] } });
+  saveState(dir, {
+    pkg: 'gitlab-ee', edition: 'ee', expectedVersion: '17.11.4-ee.0',
+    from: '17.11.4-ee.0', target: '17.11.6-ee.0', profile: 'patch',
+    steps: [{ version: '17.11.6-ee.0', reason: 'target' }],
+    stepIndex: 0, phase: 'backup', backups: [],
+  });
+  const r = await commandResume(ctx);
+  assert.notEqual(r.errorCode, 'warnings-not-accepted');
+});
+
+test('--dry-run не трогает состояние чужого прерванного запуска', async () => {
+  const { ctx, dir, calls } = bed({ flags: { dryRun: true } });
+  const foreign = {
+    pkg: 'gitlab-ee', edition: 'ee', expectedVersion: '16.11.10-ee.0',
+    steps: [{ version: '17.1.8-ee.0' }], stepIndex: 0, phase: 'settle', backups: [],
+  };
+  saveState(dir, foreign);
+  await commandRun(ctx);
+  const after = loadState(dir).state;
+  assert.ok(after, 'состояние прерванного запуска стёрто в dry-run');
+  assert.equal(after.expectedVersion, '16.11.10-ee.0');
+});
+
+/** Поставить gitlab-ee поверх CE — потеря инстанса. */
+test('CE-инстанс не получает пакет EE', async () => {
+  const { ctx, calls } = bed();
+  ctx.gitlabInfo = { package: null, edition: 'ce', aptVersion: '17.11.4-ce.0' };
+  await commandRun(ctx);
+  const install = calls.find((c) => c.startsWith('apt-get install'));
+  assert.match(install, /gitlab-ce=/, 'на CE поставили EE');
+});
+
+test('неопределимый пакет — отказ, а не установка наугад', async () => {
+  const { ctx, calls } = bed();
+  ctx.gitlabInfo = { package: null, edition: null, aptVersion: '17.11.4-ee.0' };
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'package-unknown');
+  assert.ok(!calls.some((c) => c.startsWith('apt-get install')));
+});
+
+test('--dry-run не рапортует об успехе и не говорит, что пакет закреплён', async () => {
+  const { ctx, calls } = bed({ flags: { dryRun: true, yes: false } });
+  const r = await commandRun(ctx);
+  const text = r.lines.join('\n');
+  assert.match(text, /Ничего не изменено/);
+  assert.ok(!/закреплён/.test(text), 'предпросмотр читается как завершённое обновление');
+  assert.equal(r.result.steps, 0);
+});
+
+test('падение установки доносит подсказку про resume, а не теряется', async () => {
+  const { ctx } = bed();
+  const real = ctx.exec;
+  ctx.exec = async (argv, opts) => {
+    if (argv.join(' ').startsWith('apt-get install')) throw new Error('dpkg was interrupted');
+    return real(argv, opts);
+  };
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'step-failed');
+  assert.match(r.lines.join('\n'), /resume --yes/);
+  assert.match(r.lines.join('\n'), /dpkg was interrupted/);
+});
+
+test('итог называет каталог дампа из gitlab.rb, а не наш', async () => {
+  const { ctx } = bed({ extra: { "grep -E ^\\s*gitlab_rails\\['backup_path'\\] /etc/gitlab/gitlab.rb": { code: 0, stdout: "gitlab_rails['backup_path'] = \"/mnt/nfs/gl\"" } } });
+  const r = await commandRun(ctx);
+  assert.match(r.lines.join('\n'), /\/mnt\/nfs\/gl/);
+});
+
+test('форма result соответствует объявленной в реестре и на пустом пути', async () => {
+  const { ctx } = bed({ version: '17.11.6-ee.0' });
+  const r = await commandRun(ctx);
+  assert.deepEqual(Object.keys(r.result).sort(), Object.keys(COMMANDS.run.result).sort());
+});
+
+test('--dry-run работает без --yes: он ничего не меняет', async () => {
+  const { ctx } = bed({ flags: { dryRun: true, yes: false } });
+  const r = await commandRun(ctx);
+  assert.notEqual(r.errorCode, 'confirmation-required');
+  assert.equal(r.code, EXIT.CURRENT);
+});
+
+test('--dry-run не ждёт миграции по-настоящему', async () => {
+  // Ожидание readOnly, значит dry-режим exec его не пропустил бы: без явной
+  // ветки предпросмотр честно ждал бы до 72 часов.
+  const { ctx, calls } = bed({ flags: { dryRun: true, yes: false }, extra: { [RUNNER]: { code: 0, stdout: '99 0' } } });
+  await commandRun(ctx);
+  assert.ok(!calls.some((c) => c.startsWith('apt-mark hold')), 'закрепление в предпросмотре');
+});
+
+/**
+ * Свежий план при resume может схлопнуться до «обновляться некуда», и тогда
+ * политика дала бы backup: none — оставшиеся шаги встали бы без бэкапа.
+ */
+test('resume берёт режим бэкапа из сохранённого профиля, а не из свежего плана', async () => {
+  const { ctx, dir, calls } = bed({ version: '17.11.6-ee.0' });
+  saveState(dir, {
+    pkg: 'gitlab-ee', edition: 'ee', expectedVersion: '17.11.6-ee.0',
+    from: '15.11.13-ee.0', target: '17.11.6-ee.0', profile: 'long',
+    steps: [{ version: '17.11.6-ee.0', reason: 'target' }],
+    stepIndex: 0, phase: 'backup', backups: [],
+  });
+  await commandResume(ctx);
+  assert.ok(calls.some((c) => c.startsWith('gitlab-backup')), 'шаг выполнен без бэкапа');
+});

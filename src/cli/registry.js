@@ -23,6 +23,9 @@ export const FLAGS = {
 
   'min-free-gb':     { type: 'string',  group: GROUP.TARGET,  value: 'number' },
   force:             { type: 'boolean', group: GROUP.TARGET },
+  'backup-dir':      { type: 'string',  group: GROUP.TARGET,  value: 'path' },
+  'backup-hook':     { type: 'string',  group: GROUP.TARGET,  value: 'path' },
+  'dry-run':         { type: 'boolean', group: GROUP.TARGET },
 
   lang:              { type: 'string',  group: GROUP.OUTPUT,  value: 'lang', choices: ['ru', 'en'] },
   quiet:             { type: 'boolean', group: GROUP.OUTPUT,  short: 'q' },
@@ -40,7 +43,7 @@ export const FLAGS = {
 
 const COMMON = ['lang', 'json', 'events', 'plain', 'no-color', 'config', 'help'];
 const TARGETING = ['from', 'to', 'target-major', 'safe-for-os', 'patch-only'];
-const READINESS = ['min-free-gb', 'force'];
+const READINESS = ['min-free-gb', 'force', 'backup-dir', 'backup-hook'];
 const NETWORKING = ['proxy', 'proxy-ca', 'proxy-all-apt'];
 
 /**
@@ -55,6 +58,20 @@ export const COMMANDS = {
     exits: { [EXIT.CURRENT]: 'current', [EXIT.PATCH]: 'patch', [EXIT.MINOR]: 'minor', [EXIT.MAJOR]: 'major', [EXIT.ERROR]: 'error' },
     // Только типы: описание полей живёт в локалях под ключом result.<команда>.<поле>
     result: { current: 'string', target: 'string|null', updateKind: 'string|null', profile: 'string', steps: 'number' },
+  },
+  run: {
+    mutating: true,      // единственная команда, которая меняет сервер
+    requiresRoot: true,
+    flags: [...TARGETING, ...NETWORKING, ...READINESS, 'yes', 'dry-run', ...COMMON],
+    exits: { 0: 'done', 1: 'error' },
+    result: { target: 'string', steps: 'number', backups: 'array' },
+  },
+  resume: {
+    mutating: true,
+    requiresRoot: true,
+    flags: [...NETWORKING, ...READINESS, 'yes', 'dry-run', ...COMMON],
+    exits: { 0: 'done', 1: 'error' },
+    result: { target: 'string', steps: 'number', backups: 'array' },
   },
   doctor: {
     mutating: false,
@@ -92,7 +109,7 @@ export const COMMANDS = {
   'refresh-path': {
     mutating: false,     // трогает только свой файл данных, не сервер
     requiresRoot: false,
-    flags: ['proxy', 'proxy-ca', 'yes', ...COMMON],
+    flags: ['proxy', 'proxy-ca', 'yes', 'dry-run', ...COMMON],
     exits: { 0: 'ok', 1: 'error' },
     result: { stops: 'number', added: 'array', removed: 'array', applied: 'boolean' },
   },

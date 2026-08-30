@@ -4,7 +4,7 @@ Safe upgrades for self-managed **GitLab Omnibus** on Ubuntu and Debian — the r
 
 Русская версия: [README.ru.md](README.ru.md)
 
-> **Status: phase 0.** Detection, planning, `check` and `plan` work and are tested. Backup, install and migration waiting are not implemented yet — the tool cannot change anything on your server today.
+> **Status: phases 0-2.** Detection, planning, readiness checks, backup, install, migration waiting, state and resume all work and are covered by 176 offline tests. `run` changes the server; everything else is read-only.
 
 ## Why
 
@@ -48,6 +48,22 @@ sudo gitlab-upgrade --lang en plan
 | `20` | a new minor is available |
 | `30` | a new major is available |
 | `1` | error — repository unreachable, version undetectable |
+
+### Running the upgrade
+
+`run` is the only command that changes the server, and it needs `--yes`.
+
+```bash
+sudo gitlab-upgrade run --yes                    # execute the plan
+sudo gitlab-upgrade run --dry-run                # preview, changes nothing, no --yes needed
+sudo gitlab-upgrade resume --yes                 # continue after a stop
+```
+
+Each step runs in a fixed order that is never reshuffled: backup, then install, then wait for services, then wait for background migrations before the next step. The phase is written to `/var/lib/gitlab-upgrade/state.json` *before* the action it names, so after a `kill -9` there is no guessing about what already happened.
+
+`resume` reconciles the saved state against what is actually installed and refuses to continue when they diverge — between a crash and a resume, someone may have upgraded the server by hand, and the saved plan was computed from a different version. The install phase is the one window where either version is legitimately on disk, and reconciliation accepts both.
+
+Backups follow the profile: `db` for a patch, the first one full and the rest fast for a long path. The dump itself goes wherever `gitlab_rails['backup_path']` points — the tool reads that rather than naming a directory the dump is not in — and the per-step config copies, including `gitlab-secrets.json` without which no dump can be restored, go to `--backup-dir` along with whatever `--backup-hook` receives.
 
 ### Readiness checks
 
