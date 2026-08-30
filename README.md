@@ -59,6 +59,38 @@ sudo gitlab-upgrade --proxy socks5h://user:pass@10.0.0.5:1080 check
 
 Proxy settings go into a temporary `apt.conf` passed with `apt-get -c`, never into `/etc/apt/apt.conf.d/`: `kill -9` leaves no misconfigured system behind, and the password never appears in `ps aux`. TLS verification is never disabled; for an intercepting proxy use `--proxy-ca`. Package integrity rests on the repository's GPG signature regardless of TLS.
 
+## For agents
+
+The CLI is discoverable without parsing human help. `gitlab-upgrade api` (or `--help --json`) emits a catalog of every command, flag, exit code, result field and error code:
+
+```bash
+gitlab-upgrade api | jq '.commands.check'
+```
+
+Each command declares `mutating` and `requiresRoot`, so an agent can tell what is safe to call before calling it. Today `check`, `plan`, `api` and `version` are all read-only.
+
+**Contract.** `--json` puts exactly one document on stdout:
+
+```json
+{
+  "tool": "gitlab-upgrade", "version": "0.1.0", "command": "check",
+  "ok": true, "exit": 10,
+  "result": { "current": "17.11.4-ee.0", "target": "17.11.6-ee.0",
+              "updateKind": "patch", "profile": "patch", "steps": 1 },
+  "findings": [], "error": null
+}
+```
+
+On failure `ok` is `false` and `error` carries a stable `code` (`gitlab-not-found`, `repository-unreachable`, `os-unsupported`, …) alongside a translated `message`.
+
+Three rules worth knowing:
+
+- **Key off ids, not text.** Command names, flag names, `error.code`, `exits[].id` and `result` field names are stable and never translated. `summary`, `description` and `message` are for showing to a human.
+- **The exit code is the primary answer.** `check` returns 0/10/20/30 for current/patch/minor/major and 1 for error — no output parsing needed to branch.
+- **Streams do not mix.** `--json` writes the result to stdout; `--events` writes the JSONL event stream to stderr. `gitlab-upgrade plan --json --events 2>events.jsonl` gives you both, cleanly separated.
+
+Per-command help is available in either language: `gitlab-upgrade help check`, `gitlab-upgrade --lang ru help plan`.
+
 ## Language
 
 Russian and English. Resolution order: `--lang` → `GITLAB_UPGRADE_LANG` → config → `LC_ALL`/`LC_MESSAGES`/`LANG` → English.

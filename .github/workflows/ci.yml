@@ -50,3 +50,16 @@ jobs:
           echo "check → $code: $out"
           test "$code" -eq 1
           case "$out" in *GitLab*) ;; *) echo "нет понятного сообщения"; exit 1 ;; esac
+
+      - name: Контракт машинного интерфейса
+        # Каталог и конверт — публичный контракт для агентов: ломать его молча нельзя.
+        run: |
+          cd /tmp/smoke
+          node gitlab-upgrade.mjs api | jq -e '.tool == "gitlab-upgrade" and .contract == 1' > /dev/null
+          node gitlab-upgrade.mjs api | jq -e '.commands.check.mutating == false' > /dev/null
+          node gitlab-upgrade.mjs api | jq -e '.commands | keys | length >= 4' > /dev/null
+          node gitlab-upgrade.mjs version --json | jq -e '.ok == true and .command == "version"' > /dev/null
+          # при ошибке — стабильный код, а не только текст
+          node gitlab-upgrade.mjs check --json 2>/dev/null | jq -e '.error.code == "gitlab-not-found"' > /dev/null
+          # --events не должен смешиваться с результатом на stdout
+          node gitlab-upgrade.mjs version --json --events 2>/dev/null | jq -e '.command == "version"' > /dev/null

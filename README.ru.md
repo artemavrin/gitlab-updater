@@ -58,6 +58,38 @@ sudo gitlab-upgrade --proxy socks5h://user:pass@10.0.0.5:1080 check
 
 Настройки прокси уходят во временный `apt.conf`, передаваемый через `apt-get -c`, а не в `/etc/apt/apt.conf.d/`: после `kill -9` система не остаётся перенастроенной, а пароль не появляется в `ps aux`. Проверка сертификата не отключается никогда; при TLS-перехвате используйте `--proxy-ca`. Целостность пакетов в любом случае держит GPG-подпись репозитория, а не TLS.
 
+## Для агентов
+
+Интерфейс машиночитаем, разбирать человеческую справку не нужно. `gitlab-upgrade api` (то же самое, что `--help --json`) отдаёт каталог всех команд, флагов, кодов возврата, полей результата и кодов ошибок:
+
+```bash
+gitlab-upgrade api | jq '.commands.check'
+```
+
+У каждой команды объявлены `mutating` и `requiresRoot` — агент видит, что безопасно вызывать, ещё до вызова. Сегодня `check`, `plan`, `api` и `version` ничего не меняют.
+
+**Контракт.** При `--json` на stdout выходит ровно один документ:
+
+```json
+{
+  "tool": "gitlab-upgrade", "version": "0.1.0", "command": "check",
+  "ok": true, "exit": 10,
+  "result": { "current": "17.11.4-ee.0", "target": "17.11.6-ee.0",
+              "updateKind": "patch", "profile": "patch", "steps": 1 },
+  "findings": [], "error": null
+}
+```
+
+При ошибке `ok` равно `false`, а в `error` лежит стабильный `code` (`gitlab-not-found`, `repository-unreachable`, `os-unsupported` и другие) рядом с переведённым `message`.
+
+Три правила, которые стоит знать:
+
+- **Опирайтесь на идентификаторы, а не на текст.** Имена команд и флагов, `error.code`, `exits[].id` и имена полей `result` стабильны и не переводятся. `summary`, `description` и `message` существуют, чтобы показать человеку.
+- **Код возврата — основной ответ.** `check` возвращает 0/10/20/30 для «актуально/патч/минор/мажор» и 1 при ошибке. Ветвиться можно без разбора вывода.
+- **Потоки не смешиваются.** `--json` пишет результат в stdout, `--events` — поток событий JSONL в stderr. `gitlab-upgrade plan --json --events 2>events.jsonl` даёт и то, и другое раздельно.
+
+Справка по отдельной команде доступна на обоих языках: `gitlab-upgrade help check`, `gitlab-upgrade --lang ru help plan`.
+
 ## Язык
 
 Русский и английский. Порядок источников: `--lang` → `GITLAB_UPGRADE_LANG` → конфиг → `LC_ALL`/`LC_MESSAGES`/`LANG` → английский.

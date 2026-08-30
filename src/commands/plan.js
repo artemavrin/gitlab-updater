@@ -20,9 +20,15 @@ export async function commandPlan(ctx) {
   lines.push(` ${pad(t('plan.network'), w)}${config.proxy ? t('plan.viaProxy', { proxy: redactUrl(config.proxy) }) : t('plan.direct')}`);
   lines.push('');
 
+  const base = {
+    os: os ? { id: os.id, versionId: os.versionId, pretty: os.pretty } : null,
+    edition: gitlabInfo?.edition ?? null,
+    limitedBy: plan.limitedBy ?? null,
+  };
+
   if (!plan.target) {
     lines.push(` ${t('plan.nothing')}`, '');
-    return { ...res, lines };
+    return { ...res, lines, result: { ...res.result, ...base, steps: [], policy: null } };
   }
 
   const policy = policyFor(plan.profile);
@@ -55,5 +61,14 @@ export async function commandPlan(ctx) {
   lines.push(`   sudo gitlab-upgrade run --yes${plan.profile === PROFILE.LONG ? ' --detach' : ''}`);
   lines.push('');
 
-  return { ...res, lines };
+  return {
+    ...res,
+    lines,
+    result: {
+      ...res.result,
+      ...base,
+      steps: plan.steps.map((s) => ({ version: s.raw, reason: s.reason })),
+      policy,
+    },
+  };
 }

@@ -1,43 +1,28 @@
 import { parseArgs } from 'node:util';
+import { COMMAND_NAMES, COMMANDS, DEFAULT_COMMAND, parseArgsOptions } from './registry.js';
 
-export const COMMANDS = ['check', 'plan', 'run', 'resume', 'doctor', 'config', 'version', 'help'];
+export { COMMAND_NAMES, COMMANDS, DEFAULT_COMMAND };
 
-const OPTIONS = {
-  // цель
-  from: { type: 'string' },
-  to: { type: 'string' },
-  'target-major': { type: 'string' },
-  'safe-for-os': { type: 'boolean', default: false },
-  'patch-only': { type: 'boolean', default: false },
-  // сеть
-  proxy: { type: 'string' },
-  'proxy-ca': { type: 'string' },
-  'proxy-all-apt': { type: 'boolean', default: false },
-  // вывод
-  lang: { type: 'string' },
-  json: { type: 'boolean', default: false },
-  plain: { type: 'boolean', default: false },
-  'no-color': { type: 'boolean', default: false },
-  'explain-config': { type: 'boolean', default: false },
-  // прочее
-  config: { type: 'string' },
-  yes: { type: 'boolean', short: 'y', default: false },
-  help: { type: 'boolean', short: 'h', default: false },
-  version: { type: 'boolean', short: 'v', default: false },
-};
+export function parseCli(argv, { t } = {}) {
+  const { values, positionals } = parseArgs({
+    args: argv, options: parseArgsOptions(), allowPositionals: true, strict: true,
+  });
 
-export function parseCli(argv) {
-  const { values, positionals } = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
   let command = positionals[0];
-  if (values.help || command === 'help') command = 'help';
+  let topic = positionals[1] ?? null;
+
+  if (command === 'help') { topic = positionals[1] ?? null; command = 'help'; }
+  else if (values.help) { topic = command ?? null; command = 'help'; }
   else if (values.version || command === 'version') command = 'version';
-  else if (!command) command = 'default';
-  else if (!COMMANDS.includes(command)) {
-    throw new Error(`неизвестная команда: ${command}. Доступны: ${COMMANDS.join(', ')}`);
+  else if (!command) command = DEFAULT_COMMAND;
+  else if (!COMMAND_NAMES.includes(command)) {
+    const list = COMMAND_NAMES.join(', ');
+    throw new Error(t ? t('error.unknownCommand', { command, list }) : `unknown command: ${command}. Available: ${list}`);
   }
+
   return {
     command,
-    rest: positionals.slice(1),
+    topic,
     flags: {
       from: values.from ?? null,
       to: values.to ?? null,
@@ -49,6 +34,7 @@ export function parseCli(argv) {
       proxyAllApt: values['proxy-all-apt'],
       lang: values.lang ?? null,
       json: values.json,
+      events: values.events,
       plain: values.plain,
       noColor: values['no-color'],
       explainConfig: values['explain-config'],
