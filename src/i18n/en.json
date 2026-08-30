@@ -352,5 +352,6 @@
   "blockers.passed": "{n} checks passed",
   "doctor.osCeiling": "The target is above what this OS supports. Lower it with --safe-for-os, or accept the risk with --allow-unsupported-os.",
   "error.code.os-ceiling-not-accepted": "the target is above the OS ceiling and was not explicitly accepted",
-  "flag.allow-unsupported-os.desc": "go above the OS ceiling (--force does not do this)"
+  "flag.allow-unsupported-os.desc": "go above the OS ceiling (--force does not do this)",
+  "check.omnibus-container-allowed.warn": "a container, and the check was waived by GITLAB_UPGRADE_ALLOW_CONTAINER — for the project rehearsal, not for a real server"
 }

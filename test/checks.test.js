@@ -257,3 +257,31 @@ test('doctor и run выносят один вердикт', async () => {
   assert.equal(gate(summary, { force: true }).verdict, 'doctor.osCeiling');
   assert.notEqual(gate(summary, { force: true }).verdict, 'doctor.clean');
 });
+
+test('контейнер отвергается, а поблажка стенда остаётся предупреждением', async () => {
+  const fixtures = {
+    ...checkFixtures(),
+    'test -d /opt/gitlab/embedded': { code: 0, stdout: '' },
+    'test -f /.dockerenv': { code: 0, stdout: '' },
+  };
+  const inContainer = (env) => runChecks({
+    exec: createExec({ mode: MODE.REPLAY, fixtures }),
+    env, uid: 0, isTty: false, minFreeGb: 5, data,
+    os: { id: 'ubuntu', versionId: '22.04', pretty: 'Ubuntu 22.04' },
+  }, { depth: DEPTH.FAST });
+
+  const strict = await inContainer({});
+  const found = strict.findings.find((f) => f.check === 'omnibus');
+  assert.equal(found.id, 'omnibus-container');
+  assert.equal(found.level, LEVEL.CRITICAL);
+
+  const waived = await inContainer({ GITLAB_UPGRADE_ALLOW_CONTAINER: '1' });
+  const wf = waived.findings.find((f) => f.check === 'omnibus');
+  // Снятая проверка не становится «ок»: иначе репетиционная поблажка
+  // однажды уехала бы в продакшен молча.
+  assert.equal(wf.id, 'omnibus-container-allowed');
+  assert.equal(wf.level, LEVEL.WARN);
+  assert.equal(blocked(waived), false);
+  // И всё равно требует явного --force, а не проходит сама собой.
+  assert.equal(gate(waived, {}).reason, 'warnings-not-accepted');
+});

@@ -353,5 +353,6 @@
   "blockers.passed": "пройдено проверок: {n}",
   "doctor.osCeiling": "Цель выше того, что поддерживает эта ОС. Понизить: --safe-for-os. Принять риск: --allow-unsupported-os.",
   "error.code.os-ceiling-not-accepted": "цель выше потолка ОС и не подтверждена явно",
-  "flag.allow-unsupported-os.desc": "подняться выше потолка ОС (--force этого не делает)"
+  "flag.allow-unsupported-os.desc": "подняться выше потолка ОС (--force этого не делает)",
+  "check.omnibus-container-allowed.warn": "это контейнер, проверка снята через GITLAB_UPGRADE_ALLOW_CONTAINER — режим репетиции, не для боевого сервера"
 }

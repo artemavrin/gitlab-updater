@@ -34,14 +34,20 @@ export const CHECKS = [
   {
     id: 'omnibus',
     depth: DEPTH.FAST,
-    async run({ exec }) {
+    async run({ exec, env }) {
       const omnibus = await exec(['test', '-d', '/opt/gitlab/embedded'], { readOnly: true, allowFailure: true });
       if (omnibus.code !== 0) return critical('omnibus');
       // Docker и Kubernetes живут по другим правилам — молча притворяться, что
       // это Omnibus, опаснее, чем отказаться.
       const container = await exec(['test', '-f', '/.dockerenv'], { readOnly: true, allowFailure: true });
-      if (container.code === 0) return critical('omnibus-container');
-      return ok('omnibus');
+      if (container.code !== 0) return ok('omnibus');
+      // Поблажка для собственного стенда репетиции (rehearsal/). Намеренно
+      // переменная окружения, а не флаг: в справку и в каталог `api` она не
+      // попадает. И снятая проверка не становится «ок» — иначе репетиционная
+      // поблажка однажды уехала бы в продакшен молча.
+      return env?.GITLAB_UPGRADE_ALLOW_CONTAINER
+        ? warn('omnibus-container-allowed')
+        : critical('omnibus-container');
     },
   },
 

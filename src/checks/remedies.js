@@ -82,6 +82,7 @@ export const NO_REMEDY = new Set([
   'root.critical',             // команда зависит от того, что запускали; сообщение уже её называет
   'omnibus.critical',          // не тот сервер
   'omnibus-container.critical',// Docker и Helm вне области инструмента
+  'omnibus-container-allowed.warn', // поблажка стенда: чинить нечего, это и есть предупреждение
   'secrets.critical',          // файл не создаётся заново: он либо есть, либо бэкап бесполезен
   'postgres-above.warn',       // вопрос поддерживаемости, а не поломки
   'postgres-unknown.warn',
