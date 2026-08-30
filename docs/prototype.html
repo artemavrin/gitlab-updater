@@ -1,0 +1,864 @@
+<title>gitlab-upgrade</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  :root{
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --page:    #e8eaee;
+    --surface: #ffffff;
+    --sunken:  #dfe3e8;
+    --fg:      #11151a;
+    --muted:   #5a6472;
+    --line:    #d0d6dd;
+    --accent:  #1c6f80;
+    --shadow:  0 1px 2px rgba(17,21,26,.06), 0 12px 32px -12px rgba(17,21,26,.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --page:    #0c0f13;
+      --surface: #141920;
+      --sunken:  #10141a;
+      --fg:      #e3e8ee;
+      --muted:   #8992a0;
+      --line:    #222932;
+      --accent:  #62b6c7;
+      --shadow:  0 1px 2px rgba(0,0,0,.4), 0 16px 40px -16px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --page:    #0c0f13;
+    --surface: #141920;
+    --sunken:  #10141a;
+    --fg:      #e3e8ee;
+    --muted:   #8992a0;
+    --line:    #222932;
+    --accent:  #62b6c7;
+    --shadow:  0 1px 2px rgba(0,0,0,.4), 0 16px 40px -16px rgba(0,0,0,.7);
+  }
+
+  /* Терминал — один визуальный мир в обеих темах. Терминал всегда тёмный. */
+  :root{
+    --t-bg:   #10141a;
+    --t-bar:  #171c24;
+    --t-fg:   #d4dae2;
+    --t-dim:  #79838f;
+    --t-ok:   #7cc394;
+    --t-warn: #dda94c;
+    --t-crit: #e77a7a;
+    --t-acc:  #61b7c9;
+  }
+
+  *{ box-sizing: border-box; }
+  html{ -webkit-text-size-adjust: 100%; }
+  body{
+    margin: 0;
+    background: var(--page);
+    color: var(--fg);
+    font-family: "Archivo", ui-sans-serif, system-ui, sans-serif;
+    line-height: 1.5;
+  }
+
+  .wrap{
+    max-width: 62rem;
+    margin: 0 auto;
+    padding: 3.5rem 1.25rem 5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  /* ── шапка ── */
+  header{ display: flex; flex-direction: column; gap: .5rem; }
+  .eyebrow{
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: .6875rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 500;
+  }
+  h1{
+    margin: 0;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: clamp(1.75rem, 4.5vw, 2.5rem);
+    font-weight: 700;
+    letter-spacing: -.02em;
+    text-wrap: balance;
+  }
+  .lede{
+    margin: 0;
+    max-width: 46ch;
+    color: var(--muted);
+    font-size: 1rem;
+  }
+
+  /* ── переключатель экранов ── */
+  nav{
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    background: var(--sunken);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 4px;
+    gap: 0;
+  }
+  .thumb{
+    position: absolute;
+    top: 4px; left: 4px;
+    height: calc(100% - 8px);
+    width: calc((100% - 8px) / 5);
+    background: var(--surface);
+    border-radius: 7px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.12);
+    transition: transform 220ms var(--ease-out);
+    z-index: 0;
+  }
+  nav button{
+    position: relative;
+    z-index: 1;
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: .5rem .25rem;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: .8125rem;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 7px;
+    transition: color 160ms ease, transform 160ms var(--ease-out);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  nav button[aria-selected="true"]{ color: var(--fg); }
+  nav button:active{ transform: scale(.97); }
+  nav button:focus-visible,
+  .ctl:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── терминал ── */
+  .term{
+    background: var(--t-bg);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    border: 1px solid rgba(255,255,255,.06);
+  }
+  .termbar{
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .625rem .875rem;
+    background: var(--t-bar);
+    border-bottom: 1px solid rgba(255,255,255,.05);
+  }
+  .dots{ display: flex; gap: 6px; flex: none; }
+  .dots i{ width: 10px; height: 10px; border-radius: 50%; background: #2c333d; display: block; }
+  .cmd{
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: .75rem;
+    color: var(--t-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cmd b{ color: var(--t-fg); font-weight: 500; }
+  .mode{
+    margin-left: auto;
+    flex: none;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: .6875rem;
+    letter-spacing: .06em;
+    color: var(--t-dim);
+    text-transform: uppercase;
+  }
+
+  #screen{
+    height: 37rem;
+    overflow: auto;
+    padding: .75rem 0 1rem;
+    font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--t-fg);
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+    font-variant-numeric: tabular-nums;
+  }
+  #screen.frame{ overflow: hidden; }
+  .ln{ white-space: pre; padding: 0 1rem; min-height: 1.5em; }
+  .ok{ color: var(--t-ok); }
+  .warn{ color: var(--t-warn); }
+  .crit{ color: var(--t-crit); }
+  .acc{ color: var(--t-acc); }
+  .dim{ color: var(--t-dim); }
+  .b{ font-weight: 700; }
+  .sp{ display: inline-block; width: 1ch; color: var(--t-acc); }
+  .cursor{
+    display: inline-block;
+    width: 1ch;
+    background: var(--t-fg);
+    color: var(--t-bg);
+    animation: blink 1s steps(1, end) infinite;
+  }
+  @keyframes blink{ 50%{ background: transparent; color: var(--t-fg); } }
+
+  /* ── управление ── */
+  .controls{ display: flex; flex-wrap: wrap; gap: .5rem; min-height: 2.25rem; }
+  .ctl{
+    appearance: none;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: .78125rem;
+    font-weight: 500;
+    padding: .4375rem .75rem;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--fg);
+    cursor: pointer;
+    transition: transform 160ms var(--ease-out), border-color 160ms ease, color 160ms ease;
+  }
+  .ctl:active{ transform: scale(.97); }
+  .ctl.danger{ color: #b4453f; border-color: #d9b0ad; }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .ctl.danger{ color: #e77a7a; border-color: #4a2f2f; }
+  }
+  :root[data-theme="dark"] .ctl.danger{ color: #e77a7a; border-color: #4a2f2f; }
+  @media (hover: hover) and (pointer: fine){
+    .ctl:hover{ border-color: var(--accent); }
+  }
+
+  /* ── заметки ── */
+  .notes{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1.25rem 2rem;
+    transition: opacity 180ms ease;
+  }
+  .notes.swap{ opacity: 0; }
+  .note h3{
+    margin: 0 0 .3125rem;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: .8125rem;
+    font-weight: 700;
+    letter-spacing: -.01em;
+  }
+  .note p{ margin: 0; font-size: .875rem; color: var(--muted); }
+  .note code{
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: .8125em;
+    color: var(--fg);
+  }
+
+  footer{
+    border-top: 1px solid var(--line);
+    padding-top: 1.25rem;
+    font-size: .8125rem;
+    color: var(--muted);
+    max-width: 62ch;
+  }
+  footer b{ color: var(--fg); font-weight: 600; }
+
+  @media (max-width: 40rem){
+    nav{ grid-template-columns: repeat(3, 1fr); }
+    .thumb{ width: calc((100% - 8px) / 3); }
+    #screen{ height: 30rem; font-size: 11px; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .thumb{ transition: none; }
+    .notes{ transition: none; }
+    .cursor{ animation: none; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Прототип интерфейса</div>
+    <h1>gitlab-upgrade</h1>
+    <p class="lede">Как выглядит и как ощущается TUI до того, как он написан на Ink. Тайминги настоящие: спиннер тикает на 80&nbsp;мс, проверки появляются в том темпе, в котором действительно выполняются.</p>
+  </header>
+
+  <nav role="tablist" aria-label="Экраны">
+    <div class="thumb" id="thumb"></div>
+    <button role="tab" data-s="plan"  aria-selected="true">plan</button>
+    <button role="tab" data-s="run"   aria-selected="false">run</button>
+    <button role="tab" data-s="setup" aria-selected="false">setup</button>
+    <button role="tab" data-s="proxy" aria-selected="false">proxy test</button>
+    <button role="tab" data-s="plain" aria-selected="false">--plain</button>
+  </nav>
+
+  <div class="term">
+    <div class="termbar">
+      <div class="dots"><i></i><i></i><i></i></div>
+      <div class="cmd" id="cmd"></div>
+      <div class="mode" id="mode"></div>
+    </div>
+    <div id="screen"></div>
+  </div>
+
+  <div class="controls" id="controls"></div>
+
+  <div class="notes" id="notes"></div>
+
+  <footer>
+    <b>Что здесь анимировано, а что нет.</b> Содержимое терминала меняется дискретно — строки появляются мгновенно, без затуханий и сдвигов, потому что Ink перерисовывает кадр целиком и сглаживания внутри кадра не существует. Плавные переходы есть только у обвязки самого прототипа: переключателя экранов и кнопок. Прототип, который анимирует терминал по-веб&#8209;овски, обещает то, чего в терминале не будет.
+  </footer>
+</div>
+
+<script>
+(function(){
+  const screen  = document.getElementById('screen');
+  const cmdEl   = document.getElementById('cmd');
+  const modeEl  = document.getElementById('mode');
+  const ctlEl   = document.getElementById('controls');
+  const notesEl = document.getElementById('notes');
+  const thumb   = document.getElementById('thumb');
+  const tabs    = [...document.querySelectorAll('nav button')];
+
+  /* ── один общий спиннер: как в терминале, все спиннеры в фазе ── */
+  const FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
+  let fi = 0;
+  setInterval(() => {
+    fi = (fi + 1) % FRAMES.length;
+    document.querySelectorAll('.sp').forEach(e => e.textContent = FRAMES[fi]);
+  }, 80);
+
+  /* ── планировщик, отменяемый при смене экрана ── */
+  let timers = [];
+  function at(ms, fn){ timers.push(setTimeout(fn, ms)); }
+  function every(ms, fn){ const id = setInterval(fn, ms); timers.push(id); return id; }
+  function stopAll(){ timers.forEach(id => { clearTimeout(id); clearInterval(id); }); timers = []; }
+
+  /* ── помощники вывода ── */
+  const W = 78;
+  const len = s => [...s.replace(/<[^>]*>/g, '')].length;
+  const pad = (s, n) => s + ' '.repeat(Math.max(0, n - len(s)));
+  const two = (l, r, w) => pad(l, Math.max(len(l) + 1, (w || W) - len(r))) + r;
+
+  function ln(html){
+    const d = document.createElement('div');
+    d.className = 'ln';
+    d.innerHTML = html === undefined ? '' : html;
+    screen.appendChild(d);
+    if (!screen.classList.contains('frame')) screen.scrollTop = screen.scrollHeight;
+    return d;
+  }
+  const gap = () => ln('');
+  const spin = () => '<span class="sp">' + FRAMES[fi] + '</span>';
+
+  /* строка проверки: значок, подпись, значение */
+  function check(label, value, w){
+    return ln('   ' + spin() + ' ' + pad(label, w || 30) + '<span class="dim">' + (value || '') + '</span>');
+  }
+  function settle(el, label, value, level, w){
+    const mark = level === 'warn' ? '<span class="warn">!</span>'
+               : level === 'crit' ? '<span class="crit">✗</span>'
+               : '<span class="ok">✓</span>';
+    const vcls = level === 'warn' ? 'warn' : level === 'crit' ? 'crit' : 'dim';
+    el.innerHTML = '   ' + mark + ' ' + pad(label, w || 30) + '<span class="' + vcls + '">' + (value || '') + '</span>';
+  }
+  const clock = s => String(Math.floor(s/3600)).padStart(2,'0') + ':' +
+                     String(Math.floor(s/60)%60).padStart(2,'0') + ':' +
+                     String(s%60).padStart(2,'0');
+
+  /* ══════════════════ ЭКРАН: plan ══════════════════ */
+  function planScreen(){
+    screen.classList.remove('frame');
+    ln(); ln(' <span class="b">GitLab Upgrade 0.1.0</span>'); gap();
+
+    const head = [
+      [' Сервер      ', 'gitlab.corp.local · Ubuntu 22.04.4 LTS · 8 CPU · 32 ГБ'],
+      [' GitLab      ', '15.11.13-ee · Omnibus · single-node'],
+      [' Сеть        ', 'socks5h://10.0.0.5:1080 → packages.gitlab.com · 47 версий'],
+      [' БД          ', 'PostgreSQL 13.11 · Redis 6.2.14']
+    ];
+    head.forEach((h, i) => at(160 + i * 130, () => ln(h[0] + '<span class="dim">' + h[1] + '</span>')));
+
+    const checks = [
+      ['права root',              '',                                    'ok',   140],
+      ['сервисы GitLab',          '12/12 running',                       'ok',   520],
+      ['фоновые миграции',        'нет незавершённых',                   'ok',   430],
+      ['место /var/opt/gitlab',   '142 ГБ свободно, нужно ~28 ГБ',       'ok',   310],
+      ['место /',                 '61 ГБ свободно, нужно ~8 ГБ на кэш',  'ok',   190],
+      ['gitlab-secrets.json',     'на месте',                            'ok',   120],
+      ['репозиторий пакетов',     'доступен через прокси',               'ok',   940],
+      ['unattended-upgrades',     'активен — остановлю на время апгрейда','warn', 210],
+      ['сессия',                  'SSH без tmux · см. --detach',         'warn', 110],
+      ['PostgreSQL 13',           'достаточно для 17.11 (нужно ≥ 13)',   'ok',   320]
+    ];
+
+    let t = 760;
+    at(t, () => { gap(); ln(' <span class="b">Проверки</span>'); });
+    t += 120;
+    checks.forEach(c => {
+      const start = t;
+      at(start, () => { const el = check(c[0]); at(c[3], () => settle(el, c[0], c[1], c[2])); });
+      t += c[3] + 70;
+    });
+
+    at(t + 120, () => {
+      gap();
+      ln('   <span class="ok">10 пройдено</span> <span class="dim">·</span> <span class="warn">2 предупреждения</span> <span class="dim">·</span> <span class="dim">0 критических</span>');
+      gap();
+      ln(' <span class="b">План</span> <span class="dim">· 6 шагов · 15.11.13-ee → 17.11.6-ee</span>');
+      gap();
+      const steps = [
+        ['1', '16.3.9-ee',   'обязательная остановка', 'бэкап полный',  '~90 мин'],
+        ['2', '16.7.10-ee',  'обязательная остановка', 'бэкап быстрый', '~40 мин'],
+        ['3', '16.11.10-ee', 'обязательная остановка', 'бэкап быстрый', '~50 мин'],
+        ['4', '17.3.7-ee',   'обязательная остановка', 'бэкап быстрый', '~35 мин'],
+        ['5', '17.5.5-ee',   'обязательная остановка', 'бэкап быстрый', '~30 мин'],
+        ['6', '17.11.6-ee',  'цель',                   'бэкап быстрый', '~45 мин']
+      ];
+      steps.forEach(s => ln(
+        '   <span class="dim">' + s[0] + '</span>  ' + pad(s[1], 14) +
+        '<span class="dim">' + pad(s[2], 25) + pad(s[3], 16) + s[4] + '</span>'
+      ));
+      gap();
+      ln('   <span class="dim">Итого ~5 ч · оценка, зависит от размера БД</span>');
+      ln('   <span class="dim">Предзагрузка пакетов: 6 × ~1.1 ГБ = 6.6 ГБ</span>');
+      gap();
+      ln(' <span class="warn">Отката нет.</span> <span class="dim">Downgrade невозможен — миграции БД необратимы.</span>');
+      ln(' <span class="dim">Единственный откат — бэкап или снапшот VM, сделанный до старта.</span>');
+      gap();
+      ln(' <span class="b">Дальше</span>');
+      ln('   <span class="acc">sudo gitlab-upgrade run --yes --detach --backup-hook /root/snapshot.sh</span>');
+      ln('   <span class="dim">sudo gitlab-upgrade run --yes</span>');
+      gap();
+    });
+  }
+
+  /* ══════════════════ ЭКРАН: run ══════════════════ */
+  const CHAIN = ['16.3.9','16.7.10','16.11.10','17.3.7','17.5.5','17.11.6'];
+  let runState = null;
+
+  function runScreen(skip){
+    skip = skip || 0;
+    const A = (ms, fn) => at(Math.max(0, ms - skip), fn);
+    screen.classList.add('frame');
+
+    const hdr  = ln();
+    gap();
+    const chain = ln(' ' + CHAIN.map((_, i) =>
+      (i < 2 ? '<span class="ok">●</span>' : i === 2 ? '<span class="acc">◐</span>' : '<span class="dim">○</span>') +
+      (i < 5 ? '<span class="dim">────────</span>' : '')
+    ).join(''));
+    ln(' <span class="dim">' + CHAIN.map(v => pad(v, 9)).join('') + '</span>');
+    ln(' <span class="dim">' + pad('41 мин', 9) + pad('38 мин', 9) + '</span><span class="acc">сейчас</span>');
+    gap();
+    const stepHdr = ln();
+    const rows = {};
+    ['disk','backup','install','svc','mig'].forEach(k => rows[k] = ln());
+    gap();
+    const logHdr = ln();
+    const logs = [ln(), ln(), ln(), ln()];
+    gap();
+    const bar1 = ln(), bar2 = ln();
+    const extra = [ln(), ln(), ln(), ln(), ln(), ln()];
+
+    const S = runState = {
+      step: 0, overall: 3894, phase: 'disk', danger: false,
+      remaining: 52, dialog: false
+    };
+
+    function paintHeader(){
+      hdr.innerHTML = two(
+        ' <span class="b">GitLab Upgrade</span> <span class="dim">· 15.11.13-ee → 17.11.6-ee</span>',
+        '<span class="dim">шаг 3 из 6 · ' + clock(S.overall + S.step) + '</span>');
+      stepHdr.innerHTML = two(' <span class="b">Шаг 3</span> <span class="dim">· 16.11.10-ee</span>', '<span class="dim">' + clock(S.step) + '</span>');
+    }
+
+    function paintBar(){
+      if (S.dialog) return;
+      if (S.danger){
+        bar1.innerHTML = ' <span class="crit">Ctrl-C сейчас опасен:</span> <span class="dim">идёт dpkg. Прерывание оставит пакет в битом состоянии.</span>';
+        bar2.innerHTML = ' <span class="dim">[l] журнал   </span><span class="acc">[d] отсоединиться — процесс продолжит работу</span>';
+      } else {
+        bar1.innerHTML = ' <span class="ok">Ctrl-C сейчас безопасен:</span> <span class="dim">миграции идут внутри GitLab и продолжатся без нас.</span>';
+        bar2.innerHTML = ' <span class="dim">[l] журнал   [d] отсоединиться   [Ctrl-C] прекратить наблюдение</span>';
+      }
+    }
+
+    paintHeader(); paintBar();
+    every(1000, () => { S.step++; paintHeader(); });
+
+    /* фазы шага: строка появляется со спиннером и закрывается результатом */
+    const phases = [
+      { k:'disk',    at:200,  dur:900,  base:4,    label:'место на диске',   val:'139 ГБ свободно' },
+      { k:'backup',  at:1200, dur:2400, base:12,   label:'бэкап быстрый',    val:'2.1 ГБ · 3 мин · /mnt/backup/gitlab/20260830-1412', done:204 },
+      { k:'install', at:3700, dur:4300, base:211,  label:'установка пакета', val:'из кэша · 6 мин', done:615, danger:true },
+      { k:'svc',     at:8100, dur:1400, base:622,  label:'сервисы',          val:'12/12 running', done:708 },
+      { k:'mig',     at:9600, dur:0,    base:715,  label:'фоновые миграции', val:null }
+    ];
+
+    phases.forEach(p => {
+      if (p.val !== null && skip >= p.at + p.dur){
+        S.step = p.done || p.base;
+        settle(rows[p.k], p.label, p.val, 'ok', 27);
+        paintHeader();
+        return;
+      }
+      A(p.at, () => {
+        S.step = p.base; S.phase = p.k;
+        if (p.danger){ S.danger = true; paintBar(); }
+        rows[p.k].innerHTML = '   ' + spin() + ' ' + pad(p.label, 27) + '<span class="dim">…</span>';
+        paintHeader();
+        if (p.val !== null){
+          at(p.dur, () => {
+            S.step = p.done || (p.base + Math.round(p.dur/1000));
+            settle(rows[p.k], p.label, p.val, 'ok', 27);
+            if (p.danger){ S.danger = false; paintBar(); }
+            paintHeader();
+          });
+        }
+      });
+    });
+
+    /* миграции: счётчик и журнал */
+    A(9600, () => {
+      logHdr.innerHTML = two(' <span class="b">Журнал</span>', '<span class="dim">[l] свернуть</span>');
+      const paintMig = () => {
+        const eta = Math.round(S.remaining / 0.8);
+        rows.mig.innerHTML = '   ' + spin() + ' ' + pad('фоновые миграции', 27) +
+          '<span class="dim">осталось </span><span class="b">' + S.remaining +
+          '</span><span class="dim"> · −8 за 10 мин · осталось ~' + eta + ' мин</span>';
+      };
+      paintMig();
+      const pool = [
+        'BackfillCiPipelineVariables            готово',
+        'осталось ' + (S.remaining - 1),
+        'BackfillProjectStatistics              23%',
+        'BackfillProjectStatistics              61%',
+        'BackfillProjectStatistics              готово',
+        'осталось ' + (S.remaining - 2)
+      ];
+      let li = 0, t0 = 14 * 3600 + 53 * 60 + 2;
+      const push = () => {
+        const txt = pool[li % pool.length]; li++;
+        logs.shift().remove();
+        const el = document.createElement('div');
+        el.className = 'ln';
+        el.innerHTML = '   <span class="dim">' + clock(t0).slice(0,8) + '  ' + txt + '</span>';
+        screen.insertBefore(el, logs[logs.length-1].nextSibling);
+        logs.push(el);
+        t0 += 39;
+      };
+      push();
+      every(1300, push);
+      every(2300, () => { S.remaining = Math.max(1, S.remaining - 1); paintMig(); });
+    });
+
+    S.interrupt = function(){
+      if (S.danger){
+        S.dialog = true;
+        bar1.innerHTML = ' <span class="crit">⛔ Сейчас идёт установка пакета (dpkg).</span>';
+        bar2.innerHTML = '    <span class="dim">Прерывание может оставить систему в состоянии, из которого</span>';
+        const txt = [
+          '    <span class="dim">придётся выходить руками: dpkg --configure -a</span>',
+          '',
+          '    <span class="acc">[d]              отсоединиться, апгрейд продолжится</span>',
+          '    <span class="dim">[Ctrl-C ещё раз] всё равно прервать</span>',
+          '    <span class="dim">[любая клавиша]  вернуться</span>',
+          ''
+        ];
+        extra.forEach((e, i) => e.innerHTML = txt[i] || '');
+        at(3200, () => { S.dialog = false; extra.forEach(e => e.innerHTML = ''); paintBar(); });
+      } else {
+        stopAll();
+        screen.innerHTML = '';
+        screen.classList.remove('frame');
+        ln(); ln(' <span class="dim">^C</span>');
+        ln(' <span class="ok">Отсоединились. Апгрейд продолжается.</span>');
+        gap();
+        ln(' <span class="dim">Подключиться снова:</span>');
+        ln('   <span class="acc">sudo gitlab-upgrade attach</span>');
+        gap();
+      }
+    };
+  }
+
+  /* ══════════════════ ЭКРАН: setup ══════════════════ */
+  function setupScreen(){
+    screen.classList.remove('frame');
+    ln();
+    ln(two(' <span class="b">Настройка gitlab-upgrade</span>', '<span class="dim">шаг 2 из 5</span>'));
+    gap();
+    ln(' <span class="b">Доступ к packages.gitlab.com</span>');
+    gap();
+    const probe = ln('   <span class="dim">Проверяю прямой доступ...</span>   ' + spin());
+    at(1600, () => probe.innerHTML = '   <span class="dim">Проверяю прямой доступ...</span>   <span class="crit">✗ нет ответа за 5 с</span>');
+    at(1900, () => {
+      gap();
+      ln('   <span class="b">Тип прокси</span>');
+      const opts = ['SOCKS5', 'HTTP', 'Без прокси — проверить ещё раз'];
+      const els = opts.map(o => ln('     <span class="dim">' + o + '</span>'));
+      let cur = 1;
+      const paint = () => els.forEach((e, i) => e.innerHTML = i === cur
+        ? '   <span class="acc">› ' + opts[i] + '</span>'
+        : '     <span class="dim">' + opts[i] + '</span>');
+      paint();
+      gap();
+      ln('   <span class="dim">↑↓ выбор · Enter дальше · Esc назад</span>');
+      at(900,  () => { cur = 0; paint(); });
+      at(1800, () => secondPage());
+    });
+
+    function secondPage(){
+      screen.innerHTML = '';
+      ln();
+      ln(two(' <span class="b">Настройка gitlab-upgrade</span>', '<span class="dim">шаг 2 из 5</span>'));
+      gap();
+      ln(' <span class="b">SOCKS5-прокси</span>');
+      gap();
+      const a = ln('   ' + pad('Адрес и порт', 16));
+      const b = ln('   ' + pad('Логин', 16));
+      const c = ln('   ' + pad('Пароль', 16));
+
+      /* ввод посимвольно — это то, что действительно делает пользователь */
+      function type(el, label, text, delay, mask, then){
+        let i = 0;
+        at(delay, () => {
+          const id = every(55, () => {
+            i++;
+            const shown = mask ? '•'.repeat(i) : text.slice(0, i);
+            el.innerHTML = '   ' + pad(label, 16) + shown + (i < text.length ? '<span class="cursor"> </span>' : '');
+            if (i >= text.length){ clearInterval(id); if (then) at(220, then); }
+          });
+        });
+      }
+      type(a, 'Адрес и порт', '10.0.0.5:1080', 300, false, () =>
+        type(b, 'Логин', 'gitlab-svc', 0, false, () =>
+          type(c, 'Пароль', '**********', 0, true, verify)));
+
+      function verify(){
+        gap();
+        ln('   <span class="b">Проверяю</span>');
+        const steps = [
+          ['TCP 10.0.0.5:1080',              '12 мс',                    700],
+          ['SOCKS5 handshake',               'auth: username/password',  500],
+          ['CONNECT packages.gitlab.com:443','',                         900],
+          ['TLS',                            'сертификат валиден',       600],
+          ['apt через прокси',               '47 версий gitlab-ee',     1400]
+        ];
+        let t = 200;
+        steps.forEach(s => {
+          const start = t;
+          at(start, () => {
+            const el = ln('     ' + spin() + ' ' + pad(s[0], 34));
+            at(s[2], () => el.innerHTML = '     <span class="ok">✓</span> ' + pad(s[0], 34) + '<span class="dim">' + s[1] + '</span>');
+          });
+          t += s[2] + 90;
+        });
+        at(t + 200, () => {
+          gap();
+          ln('   <span class="ok">Готово.</span> <span class="dim">Записано в /etc/gitlab-upgrade/config.json</span>');
+          gap();
+        });
+      }
+    }
+  }
+
+  /* ══════════════════ ЭКРАН: proxy test ══════════════════ */
+  let proxyVariant = 'ok';
+  function proxyScreen(){
+    screen.classList.remove('frame');
+    ln(); ln(' <span class="b">Проверка прокси</span>'); gap();
+
+    const steps = [
+      ['конфигурация',     'socks5h://10.0.0.5:1080',            250],
+      ['TCP',              '10.0.0.5:1080 · 12 мс',              600],
+      ['SOCKS5 handshake', 'auth: username/password',            450],
+      ['CONNECT',          'packages.gitlab.com:443',            800],
+      ['TLS',              'cert OK · DigiCert · до 2027-01-14', 700],
+      ['HTTP GET',         '/gitlab/gitlab-ee/... → 200',        550],
+      ['apt через прокси', 'apt-cache madison gitlab-ee → 47 версий', 1200],
+      ['apt напрямую',     'archive.ubuntu.com доступен без прокси',  500]
+    ];
+    const failIdx = 4;
+    let t = 150;
+
+    steps.forEach((s, i) => {
+      if (proxyVariant === 'fail' && i > failIdx) return;
+      const start = t;
+      at(start, () => {
+        const el = ln('   ' + spin() + ' ' + pad(s[0], 20));
+        at(s[2], () => {
+          if (proxyVariant === 'fail' && i === failIdx){
+            el.innerHTML = '   <span class="crit">✗</span> ' + pad(s[0], 20) + '<span class="crit">self-signed certificate in certificate chain</span>';
+            at(300, () => {
+              gap();
+              ln('     <span class="dim">Похоже, прокси перехватывает TLS. Добавьте его корневой сертификат:</span>');
+              ln('       <span class="acc">sudo gitlab-upgrade config set proxy-ca /путь/к/corp-root.crt</span>');
+              gap();
+              ln('     <span class="dim">Проверку сертификата инструмент не отключает. Это не мешает работе:</span>');
+              ln('     <span class="dim">целостность пакетов гарантирует GPG-подпись репозитория, а не TLS.</span>');
+              gap();
+            });
+          } else {
+            el.innerHTML = '   <span class="ok">✓</span> ' + pad(s[0], 20) + '<span class="dim">' + s[1] + '</span>';
+            if (i === 0) ln('     ' + pad('', 20) + '<span class="dim">источник: /etc/gitlab-upgrade/config.json</span>');
+            if (i === steps.length - 1) at(250, () => { gap(); ln('   <span class="ok">Всё в порядке.</span>'); gap(); });
+          }
+        });
+      });
+      t += s[2] + 80;
+    });
+  }
+
+  /* ══════════════════ ЭКРАН: --plain ══════════════════ */
+  function plainScreen(){
+    screen.classList.remove('frame');
+    const rows = [
+      ['14:12:03','ok',   'проверки: 10 пройдено, 2 предупреждения, 0 критических'],
+      ['14:12:03','info', 'план: 6 шагов, 15.11.13-ee -> 17.11.6-ee'],
+      ['14:12:03','info', 'предзагрузка: 6 пакетов, 6.6 ГБ'],
+      ['14:19:41','ok',   'предзагрузка: готово за 7 мин'],
+      ['14:19:42','info', 'шаг 1/6 16.3.9-ee: начало'],
+      ['14:19:42','info', 'бэкап полный: начало'],
+      ['15:38:47','ok',   'бэкап полный: 187 ГБ за 79 мин'],
+      ['15:38:48','info', 'установка 16.3.9-ee: начало'],
+      ['15:45:31','ok',   'установка 16.3.9-ee: из кэша за 6 мин'],
+      ['15:45:32','info', 'сервисы: 12/12 running'],
+      ['15:46:02','info', 'миграции: осталось 132'],
+      ['15:56:02','info', 'миграции: осталось 118, -14 за 10 мин'],
+      ['16:06:02','info', 'миграции: осталось 101, -17 за 10 мин'],
+      ['16:19:55','ok',   'шаг 1/6 16.3.9-ee: готово за 2:07:51'],
+      ['16:19:55','info', 'state: сохранено /var/lib/gitlab-upgrade/state.json'],
+      ['16:19:56','info', 'шаг 2/6 16.7.10-ee: начало']
+    ];
+    ln();
+    rows.forEach((r, i) => at(i * 190, () =>
+      ln('<span class="dim">2026-08-30 ' + r[0] + '</span>  ' + pad('[' + r[1] + ']', 8) + r[2])
+    ));
+    at(rows.length * 190 + 300, () => { ln('<span class="cursor"> </span>'); });
+  }
+
+  /* ══════════════════ конфигурация экранов ══════════════════ */
+  const SCREENS = {
+    plan: {
+      cmd: '<b>sudo gitlab-upgrade plan</b>',
+      mode: 'поток',
+      init: planScreen,
+      controls: [['↻ заново', () => show('plan')]],
+      notes: [
+        ['Проверки идут, а не появляются списком',
+         'Каждая строка возникает со спиннером и закрывается результатом в своём темпе. Обращение к репозиторию через прокси заметно дольше остальных — и это видно, а не спрятано за общим «Загрузка...».'],
+        ['Рекомендуемая команда стоит первой',
+         'С <code>--backup-hook</code>, потому что снапшот — единственный настоящий откат. Инструмент подталкивает к нему, а не просто разрешает.'],
+        ['«Отката нет» — на экране',
+         'Не в README, не в <code>--help</code>. Это главное, что человек должен знать до <code>run --yes</code>, поэтому оно стоит там, где его нельзя пролистать.']
+      ]
+    },
+    run: {
+      cmd: '<b>sudo gitlab-upgrade run --yes</b>',
+      mode: 'кадр',
+      init: runScreen,
+      controls: [
+        ['↻ заново',    () => show('run')],
+        ['→ к dpkg',    () => { stopAll(); screen.innerHTML = ''; runScreen(3700); }],
+        ['Ctrl-C',      () => runState && runState.interrupt(), 'danger']
+      ],
+      notes: [
+        ['Нижняя строка меняется по фазе',
+         'Во время миграций Ctrl-C безопасен — они идут внутри GitLab. Во время dpkg — нет. Нажмите «→ к dpkg», потом «Ctrl-C»: инструмент перехватит и предложит отсоединиться вместо прерывания.'],
+        ['Темп миграций измеряется',
+         '<code>−8 за 10 мин</code> — факт, а не эвристика по числу проектов. Ноль дольше 30 минут — строка желтеет; появилась failed — красная и немедленная остановка.'],
+        ['Кадр, а не поток',
+         'Этот экран перерисовывается на месте и не прокручивается — в отличие от <code>plan</code>. Поэтому он обязан помещаться в 24 строки вместе с диалогом прерывания.']
+      ]
+    },
+    setup: {
+      cmd: '<b>sudo gitlab-upgrade setup</b>',
+      mode: 'кадр',
+      init: setupScreen,
+      controls: [['↻ заново', () => show('setup')]],
+      notes: [
+        ['Каждый ответ проверяется на месте',
+         'Ввели адрес прокси — тут же TCP, рукопожатие, CONNECT, TLS, apt. Настройка, которая не работает, в конфиг не попадает.'],
+        ['Конфиг в /etc, а не в ~/.config',
+         'Инструмент запускается через <code>sudo</code>, и <code>~</code> под sudo — это <code>/root</code>. Половина жалоб «оно не видит настройку» — именно про это.'],
+        ['Мастер — отдельная команда',
+         'В <code>run</code> интерактива нет никогда: unattended-режим не должен ничего спрашивать в три часа ночи.']
+      ]
+    },
+    proxy: {
+      cmd: '<b>sudo gitlab-upgrade proxy test</b>',
+      mode: 'поток',
+      init: proxyScreen,
+      controls: [
+        ['всё работает',  () => { proxyVariant = 'ok';   show('proxy'); }],
+        ['TLS-перехват',  () => { proxyVariant = 'fail'; show('proxy'); }]
+      ],
+      notes: [
+        ['Восемь шагов вместо одного «нет связи»',
+         'Видно, на каком именно уровне рвётся: TCP, SOCKS, CONNECT, TLS, HTTP или уже сам apt. Последний шаг проверяет, что прямой доступ к зеркалу Ubuntu не сломан — прокси включается только для packages.gitlab.com.'],
+        ['Ошибка несёт готовую команду',
+         'Не «проверьте настройки», а конкретный <code>config set proxy-ca</code>. Нажмите «TLS-перехват».'],
+        ['Отключения проверки сертификата нет',
+         'И это не мешает: целостность пакетов держит GPG-подпись репозитория, а не TLS. Так и написано в подсказке — чтобы никто не искал флаг <code>--insecure</code>.']
+      ]
+    },
+    plain: {
+      cmd: '<b>sudo gitlab-upgrade run --yes --plain</b> <span class="dim">&gt; upgrade.log</span>',
+      mode: 'без TTY',
+      init: plainScreen,
+      controls: [['↻ заново', () => show('plain')]],
+      notes: [
+        ['Тот же поток событий, другой рендерер',
+         'Ядро не печатает — оно испускает события. Ink, plain и JSON подписаны на один и тот же поток, поэтому расхождений между тем, что на экране, и тем, что в логе, быть не может.'],
+        ['Включается сам',
+         'При редиректе, в systemd, в cron — везде, где нет TTY. Ни ANSI, ни перерисовок: <code>grep</code> и <code>tail -f</code> работают как ожидается.'],
+        ['Это же файл для attach',
+         'Тот же поток в виде JSONL — источник правды на диске. Поэтому <code>run --detach</code> переживает обрыв SSH, а <code>attach</code> подключается и рисует полный экран заново.']
+      ]
+    }
+  };
+
+  /* ══════════════════ переключение ══════════════════ */
+  let current = null;
+  function show(key){
+    stopAll();
+    const s = SCREENS[key];
+    screen.innerHTML = '';
+    cmdEl.innerHTML = s.cmd;
+    modeEl.textContent = s.mode;
+
+    if (current !== key){
+      notesEl.classList.add('swap');
+      setTimeout(() => {
+        notesEl.innerHTML = s.notes.map(n =>
+          '<div class="note"><h3>' + n[0] + '</h3><p>' + n[1] + '</p></div>').join('');
+        notesEl.classList.remove('swap');
+      }, 180);
+    }
+    ctlEl.innerHTML = '';
+    s.controls.forEach(c => {
+      const b = document.createElement('button');
+      b.className = 'ctl' + (c[2] ? ' ' + c[2] : '');
+      b.textContent = c[0];
+      b.addEventListener('click', c[1]);
+      ctlEl.appendChild(b);
+    });
+
+    tabs.forEach(t => t.setAttribute('aria-selected', String(t.dataset.s === key)));
+    placeThumb(key);
+
+    current = key;
+    s.init();
+  }
+
+  function placeThumb(key){
+    const idx  = tabs.findIndex(t => t.dataset.s === key);
+    const cols = window.matchMedia('(max-width: 40rem)').matches ? 3 : 5;
+    const rows = Math.ceil(tabs.length / cols);
+    thumb.style.transform = 'translateX(' + (idx % cols) * 100 + '%)';
+    thumb.style.top = 'calc(4px + ' + Math.floor(idx / cols) + ' * (100% - 8px) / ' + rows + ')';
+  }
+  tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.s)));
+  window.addEventListener('resize', () => { if (current) placeThumb(current); });
+
+  show('plan');
+})();
+</script>
