@@ -1,0 +1,586 @@
+<title>Экран run — три направления</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  /* ── страница-стенд ── */
+  :root{ --page:#e6e8ec; --muted:#5c6572; --line:#d0d5dc; }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){ --page:#0b0e12; --muted:#79838f; --line:#20262e; }
+  }
+  :root[data-theme="dark"]{ --page:#0b0e12; --muted:#79838f; --line:#20262e; }
+
+  /* терминал — один фиксированный мир в обеих темах */
+  :root{
+    --t-bg:#10141a; --t-bar:#171c24; --t-fg:#d4dae2; --t-dim:#79838f;
+    --t-ok:#7cc394; --t-warn:#dda94c; --t-crit:#e77a7a; --t-acc:#61b7c9;
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh;
+    background:var(--page);
+    font-family:"JetBrains Mono", ui-monospace, monospace;
+    display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:.75rem;
+    padding:5.5rem 1rem 3rem;
+  }
+  .term{
+    width:min(100%, 44rem);
+    background:var(--t-bg);
+    border-radius:12px; overflow:hidden;
+    border:1px solid rgba(255,255,255,.06);
+    box-shadow:0 1px 2px rgba(0,0,0,.2), 0 24px 60px -24px rgba(0,0,0,.5);
+  }
+  .termbar{
+    display:flex; align-items:center; gap:.75rem;
+    padding:.625rem .875rem; background:var(--t-bar);
+    border-bottom:1px solid rgba(255,255,255,.05);
+  }
+  .dots{ display:flex; gap:6px; }
+  .dots i{ width:10px; height:10px; border-radius:50%; background:#2c333d; }
+  .cmd{ font-size:.75rem; color:var(--t-dim); }
+  .cmd b{ color:var(--t-fg); font-weight:500; }
+
+  #stage{
+    height:34rem; overflow:hidden;
+    display:flex; flex-direction:column;
+    padding:.75rem 0;
+    font-size:12.5px; line-height:1.5; color:var(--t-fg);
+    font-variant-ligatures:none; font-feature-settings:"liga" 0,"calt" 0;
+    font-variant-numeric:tabular-nums;
+  }
+  .grow{ flex:1 1 auto; min-height:0; }
+  .feed{ flex:1 1 auto; min-height:0; overflow-y:auto; }
+  .ln{ white-space:pre; padding:0 1rem; min-height:1.5em; }
+  .ok{color:var(--t-ok)} .warn{color:var(--t-warn)} .crit{color:var(--t-crit)}
+  .acc{color:var(--t-acc)} .dim{color:var(--t-dim)} .b{font-weight:700}
+  .sp{ display:inline-block; width:1ch; color:var(--t-acc); }
+
+  .hint{ font-size:.75rem; color:var(--muted); }
+  .hint kbd{
+    font:inherit; border:1px solid var(--line); border-radius:4px;
+    padding:1px 5px; margin:0 1px;
+  }
+
+  /* ── ПИКЕР — спецификация, не дизайн-решение ── */
+  .proto-picker {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    border-radius: 999px;
+    background: rgba(10, 10, 10, 0.82);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+    backdrop-filter: blur(12px) saturate(1.4);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+      0 8px 24px rgba(0, 0, 0, 0.24),
+      0 2px 6px rgba(0, 0, 0, 0.12);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    line-height: 1;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .proto-picker-highlight {
+    position: absolute;
+    top: 4px;
+    left: 0;
+    height: 28px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    will-change: transform;
+  }
+  .proto-picker[data-ready] .proto-picker-highlight {
+    transition:
+      transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
+      width 250ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .proto-picker[data-ready] .proto-picker-highlight { transition: none; }
+  }
+  .proto-picker-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.55);
+    font: inherit;
+    cursor: pointer;
+    transition: color 150ms ease-out;
+  }
+  .proto-picker-item:hover { color: rgba(255, 255, 255, 0.85); }
+  .proto-picker-item:active { transform: scale(0.97); }
+  .proto-picker-item:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.4);
+    outline-offset: 2px;
+  }
+  .proto-picker-item[data-active] { color: #fff; }
+  .proto-picker-divider {
+    width: 1px;
+    height: 16px;
+    margin: 0 4px;
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .proto-picker-replay { padding: 0 10px; font-size: 14px; }
+  .proto-picker[data-position="top"] { bottom: auto; top: 24px; }
+</style>
+
+<div class="term">
+  <div class="termbar">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="cmd"><b>sudo gitlab-upgrade run --yes</b> <span class="dim">· 78×34</span></div>
+  </div>
+  <div id="stage"></div>
+</div>
+<p class="hint"><kbd>c</kbd> нажать Ctrl-C · <kbd>j</kbd> прыгнуть к фазе dpkg</p>
+
+<nav class="proto-picker" data-position="top" aria-label="Prototype variants">
+  <span class="proto-picker-highlight" aria-hidden="true"></span>
+  <button class="proto-picker-item" data-active aria-current="true">Панель</button>
+  <button class="proto-picker-item">Лента</button>
+  <button class="proto-picker-item">Табло</button>
+  <span class="proto-picker-divider" aria-hidden="true"></span>
+  <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
+</nav>
+
+<script>
+/* ═══════════ общий движок терминала ═══════════ */
+const stage = document.getElementById('stage');
+const FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
+let fi = 0;
+setInterval(() => {
+  fi = (fi + 1) % FRAMES.length;
+  document.querySelectorAll('.sp').forEach(e => e.textContent = FRAMES[fi]);
+}, 80);
+
+let timers = [];
+function clearTimers(){ timers.forEach(id => { clearTimeout(id); clearInterval(id); }); timers = []; }
+function at(ms, fn){ timers.push(setTimeout(fn, ms)); }
+function every(ms, fn){ const id = setInterval(fn, ms); timers.push(id); return id; }
+
+const W = 78;
+const len = s => [...s.replace(/<[^>]*>/g, '')].length;
+const pad = (s, n) => s + ' '.repeat(Math.max(0, n - len(s)));
+const two = (l, r) => pad(l, Math.max(len(l) + 1, W - len(r))) + r;
+const spin = () => '<span class="sp">' + FRAMES[fi] + '</span>';
+const clock = s => String(Math.floor(s/3600)).padStart(2,'0') + ':' +
+                   String(Math.floor(s/60)%60).padStart(2,'0') + ':' +
+                   String(s%60).padStart(2,'0');
+const bar = (done, total, w) => '█'.repeat(Math.round(w*done/total)) + '░'.repeat(w - Math.round(w*done/total));
+
+let sink = stage;
+function row(html, cls){
+  const d = document.createElement('div');
+  d.className = cls || 'ln';
+  d.innerHTML = html === undefined ? '' : html;
+  sink.appendChild(d);
+  return d;
+}
+
+/* общая последовательность фаз шага 3 */
+const PHASES = [
+  { k:'disk',    at:200,  dur:900,  base:4,   done:13,  label:'место на диске',   val:'139 ГБ свободно' },
+  { k:'backup',  at:1200, dur:2400, base:14,  done:204, label:'бэкап быстрый',    val:'2.1 ГБ · 3 мин · /mnt/backup/gitlab/20260830-1412' },
+  { k:'install', at:3700, dur:4300, base:211, done:615, label:'установка пакета', val:'из кэша · 6 мин', danger:true },
+  { k:'svc',     at:8100, dur:1400, base:622, done:708, label:'сервисы',          val:'12/12 running' },
+  { k:'mig',     at:9600, dur:0,    base:715, label:'фоновые миграции', val:null }
+];
+const OVERALL = 3894;
+const CHAIN = ['16.3.9','16.7.10','16.11.10','17.3.7','17.5.5','17.11.6'];
+
+let api = { interrupt(){}, jump(){} };
+
+/* проигрывает PHASES, дёргая колбэки варианта */
+function play(skip, hooks){
+  const A = (ms, fn) => at(Math.max(0, ms - skip), fn);
+  PHASES.forEach(p => {
+    if (p.val !== null && skip >= p.at + p.dur){ hooks.done(p, true); return; }
+    A(p.at, () => {
+      hooks.start(p);
+      if (p.val !== null) at(p.dur, () => hooks.done(p, false));
+    });
+  });
+  A(9600, () => hooks.migrations());
+}
+
+/* ═══════════ ВАРИАНТ 1 · Панель ═══════════ */
+/* ось: максимальная плотность, фиксированный кадр, всё видно одновременно */
+function variantPanel(skip){
+  clearTimers();
+  requestAnimationFrame(() => {
+    stage.innerHTML = ''; sink = stage;
+    skip = skip || 0;
+
+    const hdr = row(); row();
+    row(' ' + CHAIN.map((_, i) =>
+      (i < 2 ? '<span class="ok">●</span>' : i === 2 ? '<span class="acc">◐</span>' : '<span class="dim">○</span>') +
+      (i < 5 ? '<span class="dim">────────</span>' : '')).join(''));
+    row(' <span class="dim">' + CHAIN.map(v => pad(v, 9)).join('') + '</span>');
+    row(' <span class="dim">' + pad('41 мин', 9) + pad('38 мин', 9) + '</span><span class="acc">сейчас</span>');
+    row();
+    const stepHdr = row();
+    const R = {}; PHASES.forEach(p => R[p.k] = row());
+    row();
+    const logHdr = row();
+    let logs = [row(), row(), row(), row()];
+    row(undefined, 'grow');
+    const b1 = row(), b2 = row();
+    const extra = [row(), row(), row(), row(), row(), row()];
+
+    const S = { step: 4, danger: false, remaining: 52, dialog: false };
+
+    const paintHdr = () => {
+      hdr.innerHTML = two(' <span class="b">GitLab Upgrade</span> <span class="dim">· 15.11.13-ee → 17.11.6-ee</span>',
+                          '<span class="dim">шаг 3 из 6 · ' + clock(OVERALL + S.step) + '</span>');
+      stepHdr.innerHTML = two(' <span class="b">Шаг 3</span> <span class="dim">· 16.11.10-ee</span>',
+                              '<span class="dim">' + clock(S.step) + '</span>');
+    };
+    const paintBar = () => {
+      if (S.dialog) return;
+      if (S.danger){
+        b1.innerHTML = ' <span class="crit">Ctrl-C сейчас опасен:</span> <span class="dim">идёт dpkg. Прерывание оставит пакет в битом состоянии.</span>';
+        b2.innerHTML = ' <span class="dim">[l] журнал   </span><span class="acc">[d] отсоединиться — процесс продолжит работу</span>';
+      } else {
+        b1.innerHTML = ' <span class="ok">Ctrl-C сейчас безопасен:</span> <span class="dim">миграции идут внутри GitLab.</span>';
+        b2.innerHTML = ' <span class="dim">[l] журнал   [d] отсоединиться   [Ctrl-C] прекратить наблюдение</span>';
+      }
+    };
+    paintHdr(); paintBar();
+    every(1000, () => { S.step++; paintHdr(); });
+
+    play(skip, {
+      start(p){
+        S.step = p.base;
+        if (p.danger){ S.danger = true; paintBar(); }
+        R[p.k].innerHTML = '   ' + spin() + ' ' + pad(p.label, 27) + '<span class="dim">…</span>';
+        paintHdr();
+      },
+      done(p){
+        S.step = p.done;
+        R[p.k].innerHTML = '   <span class="ok">✓</span> ' + pad(p.label, 27) + '<span class="dim">' + p.val + '</span>';
+        if (p.danger){ S.danger = false; paintBar(); }
+        paintHdr();
+      },
+      migrations(){
+        logHdr.innerHTML = two(' <span class="b">Журнал</span>', '<span class="dim">[l] свернуть</span>');
+        const paint = () => R.mig.innerHTML = '   ' + spin() + ' ' + pad('фоновые миграции', 27) +
+          '<span class="dim">осталось </span><span class="b">' + S.remaining +
+          '</span><span class="dim"> · −8 за 10 мин · ~' + Math.round(S.remaining/0.8) + ' мин</span>';
+        paint();
+        const pool = ['BackfillCiPipelineVariables       готово', 'осталось 51',
+                      'BackfillProjectStatistics         23%',   'BackfillProjectStatistics         61%',
+                      'BackfillProjectStatistics         готово','осталось 50'];
+        let li = 0, t0 = 14*3600 + 53*60 + 2;
+        const push = () => {
+          const el = document.createElement('div');
+          el.className = 'ln';
+          el.innerHTML = '   <span class="dim">' + clock(t0) + '  ' + pool[li++ % pool.length] + '</span>';
+          stage.insertBefore(el, logs[logs.length-1].nextSibling);
+          logs.shift().remove(); logs.push(el); t0 += 39;
+        };
+        push(); push(); push(); push();   // журнал не показывается полупустым
+        every(1300, push);
+        every(2300, () => { S.remaining = Math.max(1, S.remaining - 1); paint(); });
+      }
+    });
+
+    api = {
+      jump: () => variantPanel(3700),
+      interrupt(){
+        if (!S.danger){
+          clearTimers(); stage.innerHTML = ''; sink = stage;
+          row(); row(' <span class="dim">^C</span>');
+          row(' <span class="ok">Отсоединились. Апгрейд продолжается.</span>'); row();
+          row(' <span class="dim">Подключиться снова:</span>');
+          row('   <span class="acc">sudo gitlab-upgrade attach</span>');
+          return;
+        }
+        S.dialog = true;
+        b1.innerHTML = ' <span class="crit">⛔ Сейчас идёт установка пакета (dpkg).</span>';
+        b2.innerHTML = '    <span class="dim">Прерывание может оставить систему в состоянии, из которого</span>';
+        [ '    <span class="dim">придётся выходить руками: dpkg --configure -a</span>', '',
+          '    <span class="acc">[d]              отсоединиться, апгрейд продолжится</span>',
+          '    <span class="dim">[Ctrl-C ещё раз] всё равно прервать</span>',
+          '    <span class="dim">[любая клавиша]  вернуться</span>', ''
+        ].forEach((t, i) => extra[i].innerHTML = t);
+        at(3600, () => { S.dialog = false; extra.forEach(e => e.innerHTML = ''); paintBar(); });
+      }
+    };
+  });
+  return '';
+}
+
+/* ═══════════ ВАРИАНТ 2 · Лента ═══════════ */
+/* ось: история первична — поток с прокруткой, живая только закреплённая строка */
+function variantStream(skip){
+  clearTimers();
+  requestAnimationFrame(() => {
+    stage.innerHTML = '';
+    skip = skip || 0;
+
+    /* лента прокручивается, закреплённая строка держится за последнюю строку кадра */
+    const feed = document.createElement('div'); feed.className = 'feed';
+    const rule = document.createElement('div'); rule.className = 'ln';
+    const pin  = document.createElement('div'); pin.className  = 'ln';
+    rule.innerHTML = '<span class="dim">' + '─'.repeat(W) + '</span>';
+    stage.append(feed, rule, pin);
+    sink = feed;
+
+    /* прошлые шаги остаются в скроллбэке — в этом весь смысл направления */
+    [' <span class="dim">13:31:20</span>  <span class="b">шаг 1/6</span>  <span class="dim">16.3.9-ee</span>',
+     '   <span class="ok">✓</span> бэкап полный              <span class="dim">187 ГБ · 79 мин</span>',
+     '   <span class="ok">✓</span> установка пакета          <span class="dim">из кэша · 7 мин</span>',
+     '   <span class="ok">✓</span> фоновые миграции          <span class="dim">132 → 0 · 41 мин</span>',
+     ' <span class="dim">15:38:47</span>  <span class="ok">шаг 1/6 готово за 02:07:27</span>', '',
+     ' <span class="dim">15:38:48</span>  <span class="b">шаг 2/6</span>  <span class="dim">16.7.10-ee</span>',
+     '   <span class="ok">✓</span> бэкап быстрый             <span class="dim">1.9 ГБ · 3 мин</span>',
+     '   <span class="ok">✓</span> установка пакета          <span class="dim">из кэша · 5 мин</span>',
+     '   <span class="ok">✓</span> фоновые миграции          <span class="dim">88 → 0 · 30 мин</span>',
+     ' <span class="dim">16:19:55</span>  <span class="ok">шаг 2/6 готово за 00:41:07</span>', '',
+     ' <span class="dim">16:19:56</span>  <span class="b">шаг 3/6</span>  <span class="dim">16.11.10-ee</span>'
+    ].forEach(t => row(t));
+
+    const S = { step: 4, danger: false, remaining: 52, phase: '', phaseLabel: '' };
+    const emit = html => { row(html); feed.scrollTop = feed.scrollHeight; };
+
+    const paintPin = () => {
+      const state = S.danger
+        ? '<span class="crit">Ctrl-C опасен · dpkg</span>'
+        : '<span class="ok">Ctrl-C безопасен</span>';
+      const mid = S.phase === 'mig' ? 'миграции ' + S.remaining : S.phaseLabel;
+      pin.innerHTML = ' <span class="b">шаг 3/6</span> <span class="dim">· ' + clock(OVERALL + S.step) +
+                      ' · ' + mid + ' · </span>' + state;
+    };
+    paintPin();
+    every(1000, () => { S.step++; paintPin(); });
+
+    let live = null;
+    play(skip, {
+      start(p){
+        S.step = p.base; S.phase = p.k; S.phaseLabel = p.label;
+        if (p.danger) S.danger = true;
+        if (p.k === 'mig') { paintPin(); return; }   // живую строку миграций ставит migrations()
+        live = row('   ' + spin() + ' ' + pad(p.label, 26) + '<span class="dim">…</span>');
+        feed.scrollTop = feed.scrollHeight;
+        paintPin();
+      },
+      done(p, instant){
+        S.step = p.done;
+        const html = '   <span class="ok">✓</span> ' + pad(p.label, 26) + '<span class="dim">' + p.val + '</span>';
+        if (instant || !live) emit(html); else live.innerHTML = html;
+        live = null;
+        if (p.danger) S.danger = false;
+        paintPin();
+      },
+      migrations(){
+        S.phase = 'mig';
+        const mig = row('   ' + spin() + ' ' + pad('фоновые миграции', 26) + '<span class="dim">осталось 52</span>');
+        feed.scrollTop = feed.scrollHeight;
+        const pool = ['BackfillCiPipelineVariables       готово','BackfillProjectStatistics         23%',
+                      'BackfillProjectStatistics         61%','BackfillProjectStatistics         готово',
+                      'BackfillMergeRequestDiffs         8%'];
+        let li = 0, t0 = 14*3600 + 53*60 + 2;
+        every(1500, () => {
+          /* живая строка миграций всегда остаётся последней в ленте */
+          feed.insertBefore(Object.assign(document.createElement('div'),
+            { className:'ln', innerHTML:'     <span class="dim">' + clock(t0) + '  ' + pool[li++ % pool.length] + '</span>' }), mig);
+          t0 += 39;
+          feed.scrollTop = feed.scrollHeight;
+        });
+        every(2300, () => {
+          S.remaining = Math.max(1, S.remaining - 1);
+          mig.innerHTML = '   ' + spin() + ' ' + pad('фоновые миграции', 26) +
+            '<span class="dim">осталось </span><span class="b">' + S.remaining + '</span>' +
+            '<span class="dim"> · −8 за 10 мин</span>';
+          paintPin();
+        });
+      }
+    });
+
+    api = {
+      jump: () => variantStream(3700),
+      interrupt(){
+        if (!S.danger){
+          clearTimers();
+          emit(' <span class="dim">^C</span>');
+          emit(' <span class="ok">Отсоединились. Апгрейд продолжается.</span>');
+          emit(' <span class="dim">Подключиться снова: </span><span class="acc">sudo gitlab-upgrade attach</span>');
+          rule.innerHTML = ''; pin.innerHTML = '';
+          return;
+        }
+        emit('');
+        emit(' <span class="crit">⛔ Сейчас идёт установка пакета (dpkg).</span>');
+        emit(' <span class="dim">   Прерывание оставит систему в незавершённой транзакции dpkg.</span>');
+        emit(' <span class="dim">   Выходить придётся руками: dpkg --configure -a</span>');
+        emit('');
+        emit(' <span class="acc">   [d]              отсоединиться, апгрейд продолжится</span>');
+        emit(' <span class="dim">   [Ctrl-C ещё раз] всё равно прервать</span>');
+        emit('');
+      }
+    };
+  });
+  return '';
+}
+
+/* ═══════════ ВАРИАНТ 3 · Табло ═══════════ */
+/* ось: минимум внимания — один факт крупно, остальное по клавише */
+function variantBoard(skip){
+  clearTimers();
+  requestAnimationFrame(() => {
+    stage.innerHTML = ''; sink = stage;
+    skip = skip || 0;
+
+    row(); row();
+    row('      <span class="dim">GitLab</span>  <span class="b">15.11.13</span>  <span class="dim">→</span>  <span class="b">17.11.6</span>');
+    row(); row();
+    const prog = row();
+    row(); row();
+    const act = row(), actGap = row(), d1 = row(), d2 = row();
+    row(); row(); row();
+    const safe = row();
+    const dlg = [row(), row(), row(), row(), row(), row(), row()];
+    row(undefined, 'grow');
+    const foot = row();
+
+    const S = { step: 4, danger: false, remaining: 52, dialog: false };
+
+    const paint = () => {
+      const filled = Math.round(44 * 2 / 6);
+      prog.innerHTML = '      <span class="acc">' + '█'.repeat(filled) + '</span>' +
+                       '<span class="dim">' + '░'.repeat(44 - filled) + '</span>' +
+                       '   <span class="dim">шаг 3 из 6</span>';
+      foot.innerHTML = two('      <span class="dim">[l] журнал  [p] путь  [d] отсоединиться</span>',
+                           '<span class="dim">прошло ' + clock(OVERALL + S.step) + '</span>   ');
+    };
+    const paintSafe = () => {
+      if (S.dialog) return;
+      safe.innerHTML = S.danger
+        ? '      <span class="crit">⛔  Ctrl-C сейчас опасен — идёт dpkg</span>'
+        : '      <span class="ok">✓  Ctrl-C сейчас безопасен</span>';
+    };
+    paint(); paintSafe();
+    every(1000, () => { S.step++; paint(); });
+
+    play(skip, {
+      start(p){
+        S.step = p.base;
+        if (p.danger){ S.danger = true; paintSafe(); }
+        act.innerHTML = '      ' + spin() + '  <span class="b">' + p.label + '</span> <span class="dim">16.11.10-ee</span>';
+        d1.innerHTML = ''; d2.innerHTML = '';
+        paint();
+      },
+      done(p){
+        S.step = p.done;
+        if (p.danger){ S.danger = false; paintSafe(); }
+        paint();
+      },
+      migrations(){
+        const upd = () => {
+          act.innerHTML = '      ' + spin() + '  <span class="b">фоновые миграции</span> <span class="dim">16.11.10-ee</span>';
+          d1.innerHTML  = '         <span class="dim">осталось </span><span class="b">' + S.remaining +
+                          '</span><span class="dim"> миграций, −8 за 10 минут</span>';
+          d2.innerHTML  = '         <span class="dim">примерно ещё ' + Math.round(S.remaining/0.8) + ' минут</span>';
+        };
+        upd();
+        every(2300, () => { S.remaining = Math.max(1, S.remaining - 1); upd(); });
+      }
+    });
+
+    api = {
+      jump: () => variantBoard(3700),
+      interrupt(){
+        if (!S.danger){
+          clearTimers(); stage.innerHTML = ''; sink = stage;
+          row(); row(); row();
+          row('      <span class="dim">^C</span>');
+          row('      <span class="ok">Отсоединились. Апгрейд продолжается.</span>');
+          row(); row();
+          row('      <span class="dim">Подключиться снова:</span>');
+          row('      <span class="acc">sudo gitlab-upgrade attach</span>');
+          return;
+        }
+        S.dialog = true;
+        act.innerHTML = ''; d1.innerHTML = ''; d2.innerHTML = '';
+        safe.innerHTML = '      <span class="crit b">⛔  ИДЁТ УСТАНОВКА ПАКЕТА</span>';
+        [ '', '      <span class="dim">Прерывание сейчас оставит dpkg в незавершённой транзакции.</span>',
+          '      <span class="dim">Выходить придётся руками: dpkg --configure -a</span>', '',
+          '      <span class="acc">[d]               отсоединиться, апгрейд продолжится</span>',
+          '      <span class="dim">[Ctrl-C ещё раз]  всё равно прервать</span>', ''
+        ].forEach((t, i) => dlg[i].innerHTML = t);
+        at(3600, () => {
+          S.dialog = false; dlg.forEach(e => e.innerHTML = '');
+          paintSafe();
+          act.innerHTML = '      ' + spin() + '  <span class="b">установка пакета</span> <span class="dim">16.11.10-ee</span>';
+        });
+      }
+    };
+  });
+  return '';
+}
+
+/* ═══════════ пикер ═══════════ */
+const variants = [variantPanel, variantStream, variantBoard];
+
+const picker = document.querySelector('.proto-picker');
+const highlight = picker.querySelector('.proto-picker-highlight');
+const items = [...picker.querySelectorAll('.proto-picker-item:not(.proto-picker-replay)')];
+const replay = picker.querySelector('.proto-picker-replay');
+let current = 0;
+
+function moveHighlight() {
+  const el = items[current];
+  highlight.style.width = el.offsetWidth + 'px';
+  highlight.style.transform = `translateX(${el.offsetLeft}px)`;
+}
+
+function mount(i) {
+  stage.innerHTML = '';
+  requestAnimationFrame(() => { stage.innerHTML = variants[i](); });
+}
+
+function setActive(i) {
+  if (i < 0 || i >= variants.length) return;
+  current = i;
+  items.forEach((el, j) => {
+    el.toggleAttribute('data-active', j === i);
+    if (j === i) el.setAttribute('aria-current', 'true');
+    else el.removeAttribute('aria-current');
+  });
+  moveHighlight();
+  const url = new URL(location);
+  url.searchParams.set('v', i + 1);
+  history.replaceState(null, '', url);
+  mount(i);
+}
+
+items.forEach((el, i) => el.addEventListener('click', () => setActive(i)));
+replay?.addEventListener('click', () => mount(current));
+window.addEventListener('resize', moveHighlight);
+
+document.addEventListener('keydown', (e) => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const num = parseInt(e.key, 10);
+  if (num >= 1 && num <= variants.length) setActive(num - 1);
+  else if (e.key === 'ArrowRight') setActive((current + 1) % variants.length);
+  else if (e.key === 'ArrowLeft') setActive((current - 1 + variants.length) % variants.length);
+  else if (e.key === 'r' || e.key === 'R') mount(current);
+  else if (e.key === 'c' || e.key === 'C') api.interrupt();
+  else if (e.key === 'j' || e.key === 'J') api.jump();
+});
+
+setActive((parseInt(new URLSearchParams(location.search).get('v'), 10) || 1) - 1);
+requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
+</script>
