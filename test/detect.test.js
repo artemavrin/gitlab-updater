@@ -37,8 +37,9 @@ test('разбирает df и переводит в гигабайты', () => 
   assert.equal(toGb(rows[0].avail), 142.1);
 });
 
-test('версия PostgreSQL берётся мажорной', () => {
-  assert.equal(parsePgVersion('psql (PostgreSQL) 13.11'), 13);
+test('версия PostgreSQL берётся целиком: 14.2 и 14.14 — разные требования', () => {
+  assert.equal(parsePgVersion('psql (PostgreSQL) 14.2'), '14.2');
+  assert.equal(parsePgVersion('psql (PostgreSQL) 13.11'), '13.11');
 });
 
 test('версия GitLab и редакция берутся из dpkg', async () => {

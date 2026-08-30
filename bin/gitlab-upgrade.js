@@ -12,6 +12,7 @@ import { commandCheck } from '../src/commands/check.js';
 import { commandPlan } from '../src/commands/plan.js';
 import { commandRefreshPath } from '../src/commands/refreshPath.js';
 import { commandNext } from '../src/commands/next.js';
+import { commandDoctor } from '../src/commands/doctor.js';
 import { detectOs } from '../src/detect/os.js';
 import { detectGitlab } from '../src/detect/gitlab.js';
 import { EXIT } from '../src/plan/planner.js';
@@ -28,7 +29,7 @@ for (const stream of [process.stdout, process.stderr]) {
   stream.on('error', (err) => { if (err.code === 'EPIPE') process.exit(0); });
 }
 
-const RUNNERS = { check: commandCheck, next: commandNext, plan: commandPlan, 'refresh-path': commandRefreshPath };
+const RUNNERS = { check: commandCheck, next: commandNext, plan: commandPlan, doctor: commandDoctor, 'refresh-path': commandRefreshPath };
 
 async function main(argv) {
   const early = createTranslator(resolveLocale({}));

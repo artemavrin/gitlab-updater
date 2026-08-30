@@ -21,6 +21,9 @@ export const FLAGS = {
   'proxy-ca':        { type: 'string',  group: GROUP.NETWORK, value: 'path' },
   'proxy-all-apt':   { type: 'boolean', group: GROUP.NETWORK },
 
+  'min-free-gb':     { type: 'string',  group: GROUP.TARGET,  value: 'number' },
+  force:             { type: 'boolean', group: GROUP.TARGET },
+
   lang:              { type: 'string',  group: GROUP.OUTPUT,  value: 'lang', choices: ['ru', 'en'] },
   quiet:             { type: 'boolean', group: GROUP.OUTPUT,  short: 'q' },
   json:              { type: 'boolean', group: GROUP.OUTPUT },
@@ -37,6 +40,7 @@ export const FLAGS = {
 
 const COMMON = ['lang', 'json', 'events', 'plain', 'no-color', 'config', 'help'];
 const TARGETING = ['from', 'to', 'target-major', 'safe-for-os', 'patch-only'];
+const READINESS = ['min-free-gb', 'force'];
 const NETWORKING = ['proxy', 'proxy-ca', 'proxy-all-apt'];
 
 /**
@@ -51,6 +55,13 @@ export const COMMANDS = {
     exits: { [EXIT.CURRENT]: 'current', [EXIT.PATCH]: 'patch', [EXIT.MINOR]: 'minor', [EXIT.MAJOR]: 'major', [EXIT.ERROR]: 'error' },
     // Только типы: описание полей живёт в локалях под ключом result.<команда>.<поле>
     result: { current: 'string', target: 'string|null', updateKind: 'string|null', profile: 'string', steps: 'number' },
+  },
+  doctor: {
+    mutating: false,
+    requiresRoot: true,
+    flags: [...TARGETING, ...NETWORKING, 'min-free-gb', 'force', ...COMMON],
+    exits: { 0: 'ok', 1: 'checks-failed' },
+    result: { ok: 'number', warnings: 'number', critical: 'number', blocked: 'boolean', findings: 'array' },
   },
   next: {
     mutating: false,
@@ -68,7 +79,7 @@ export const COMMANDS = {
   plan: {
     mutating: false,
     requiresRoot: true,
-    flags: [...TARGETING, ...NETWORKING, ...COMMON, 'explain-config'],
+    flags: [...TARGETING, ...NETWORKING, ...READINESS, ...COMMON, 'explain-config'],
     exits: { [EXIT.CURRENT]: 'current', [EXIT.PATCH]: 'patch', [EXIT.MINOR]: 'minor', [EXIT.MAJOR]: 'major', [EXIT.ERROR]: 'error' },
     result: {
       current: 'string', target: 'string|null', updateKind: 'string|null', profile: 'string',

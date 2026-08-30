@@ -29,6 +29,8 @@ export function parseCli(argv, { t } = {}) {
       targetMajor: values['target-major'] ?? null,
       safeForOs: values['safe-for-os'],
       patchOnly: values['patch-only'],
+      minFreeGb: values['min-free-gb'] ?? null,
+      force: values.force,
       proxy: values.proxy ?? null,
       proxyCa: values['proxy-ca'] ?? null,
       proxyAllApt: values['proxy-all-apt'],

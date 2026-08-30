@@ -55,6 +55,29 @@ export const dfOutput = `Filesystem       1B-blocks          Avail Mounted on
 /dev/sda1      107374182400    65498251264 /
 `;
 
+/** Здоровый инстанс: все проверки готовности проходят. */
+export function checkFixtures({ migrations = '0 0', pg = 'psql (PostgreSQL) 15.6', status = ctlStatusHealthy, df = dfOutput, extra = {} } = {}) {
+  const RUNNER = 'm = Gitlab::Database::BackgroundMigration::BatchedMigration; puts "#{m.queued.count} #{m.failed.count}"';
+  return {
+    'test -d /opt/gitlab/embedded': { code: 0, stdout: '' },
+    'test -f /.dockerenv': { code: 1, stdout: '' },
+    'test -f /etc/gitlab/gitlab-secrets.json': { code: 0, stdout: '' },
+    'gitlab-ctl status': { code: 0, stdout: status },
+    [`gitlab-rails runner -e production ${RUNNER}`]: { code: 0, stdout: migrations },
+    'df -B1 --output=source,size,avail,target /var/opt/gitlab /': { code: 0, stdout: df },
+    'fuser /var/lib/dpkg/lock-frontend': { code: 1, stdout: '' },
+    'systemctl is-active apt-daily.timer': { code: 3, stdout: 'inactive' },
+    'gitlab-psql --version': { code: 0, stdout: pg },
+    ...extra,
+  };
+}
+
+/** Мало места: 1 ГБ на /var/opt/gitlab. */
+export const dfTight = `Filesystem       1B-blocks          Avail Mounted on
+/dev/sda2      500107862016     1073741824 /var/opt/gitlab
+/dev/sda1      107374182400    65498251264 /
+`;
+
 /** Набор для exec в режиме replay. */
 export function fixturesFor({ version = '17.11.4-ee.0', pkg = 'gitlab-ee', madison = madison1711, status = ctlStatusHealthy } = {}) {
   const set = {

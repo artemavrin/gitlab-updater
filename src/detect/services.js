@@ -21,8 +21,12 @@ export async function detectServices(exec) {
   return parseCtlStatus(r.stdout);
 }
 
-/** Мажорная версия PostgreSQL из `gitlab-psql --version`. */
+/**
+ * Версия PostgreSQL из `gitlab-psql --version` — целиком, а не мажорная.
+ * Официальные минимумы заданы с точностью до минорной (14.14), и округление
+ * до мажора пропустило бы 14.2 как подходящую для GitLab 17.
+ */
 export function parsePgVersion(stdout) {
-  const m = /(\d+)\.\d+/.exec(String(stdout));
-  return m ? Number(m[1]) : null;
+  const m = /(\d+(?:\.\d+)*)/.exec(String(stdout).replace(/^\D*/, ''));
+  return m ? m[1] : null;
 }
