@@ -34,10 +34,10 @@
       font-size:clamp(1.75rem,4.5vw,2.5rem); font-weight:700; letter-spacing:-.02em; }
   .lede{ margin:0; max-width:52ch; color:var(--muted); }
 
-  nav{ position:relative; display:grid; grid-template-columns:repeat(8,1fr);
+  nav{ position:relative; display:grid; grid-template-columns:repeat(5,1fr);
        background:var(--sunken); border:1px solid var(--line); border-radius:10px; padding:4px; }
   .thumb{ position:absolute; top:4px; left:4px; height:calc(100% - 8px);
-          width:calc((100% - 8px)/8); background:var(--surface); border-radius:7px;
+          width:calc((100% - 8px)/5); background:var(--surface); border-radius:7px;
           box-shadow:0 1px 2px rgba(0,0,0,.12); transition:transform 220ms var(--ease-out); z-index:0; }
   nav button{ position:relative; z-index:1; appearance:none; background:none; border:0;
     padding:.5rem .125rem; font-family:"JetBrains Mono",monospace; font-size:.75rem;
@@ -83,8 +83,8 @@
           color:var(--muted); max-width:64ch; }
   footer b{ color:var(--fg); font-weight:600; }
   @media (max-width:52rem){
-    nav{ grid-template-columns:repeat(4,1fr); }
-    .thumb{ width:calc((100% - 8px)/4); }
+    nav{ grid-template-columns:repeat(3,1fr); }
+    .thumb{ width:calc((100% - 8px)/3); }
     #screen{ height:30rem; font-size:11px; }
   }
   @media (prefers-reduced-motion: reduce){ .thumb,.notes{ transition:none; } }
@@ -99,7 +99,8 @@
 
   <nav role="tablist" aria-label="Экраны">
     <div class="thumb" id="thumb"></div>
-    <button role="tab" data-s="plan"   aria-selected="true">план</button>
+    <button role="tab" data-s="patch"  aria-selected="true">патч</button>
+    <button role="tab" data-s="plan"   aria-selected="false">план</button>
     <button role="tab" data-s="run"    aria-selected="false">запуск</button>
     <button role="tab" data-s="path"   aria-selected="false">путь</button>
     <button role="tab" data-s="config" aria-selected="false">настройки</button>
@@ -153,6 +154,68 @@ function row(html){ const d=document.createElement('div'); d.className='ln';
   d.innerHTML=html===undefined?'':html; screen.appendChild(d); return d; }
 const lines=arr=>arr.forEach(t=>row(t));
 let api={};
+
+/* ══════════ патч: повседневное обновление, две локали ══════════ */
+const L={ru:{
+  head:'патч, та же минорная версия',
+  host:'gitlab.corp.local · Ubuntu 22.04 · через прокси',
+  p1:'сервисы 12/12 · миграций в очереди нет · 142 ГБ свободно',
+  p2:'пакет доступен: 17.11.6-ee.0 · 1.1 ГБ',
+  b1:'Один шаг: бэкап БД и конфигов, установка, миграции.',
+  b2:'Ориентировочно 10–20 минут, GitLab будет недоступен около 2 минут.',
+  ask:'Обновить? [y/N]', yes:'y',
+  rows:[['бэкап БД и конфигов','1.2 ГБ · 1 мин · …/20260830-2103'],
+        ['загрузка пакета','1.1 ГБ через прокси · 47 с'],
+        ['установка','2 мин'],['сервисы','12/12 running']],
+  mig:'фоновые миграции', migv:'осталось 3',
+  safe:'Ctrl-C сейчас безопасен',
+  done:'✓ GitLab 17.11.6-ee', took:'заняло 00:11:38',
+  d1:'миграции завершены · сервисы 12/12 · бэкап …/20260830-2103',
+  d2:'пакет закреплён: apt-mark hold gitlab-ee',
+  sw:'[l] English'
+},en:{
+  head:'patch, same minor version',
+  host:'gitlab.corp.local · Ubuntu 22.04 · via proxy',
+  p1:'services 12/12 · no queued migrations · 142 GB free',
+  p2:'package available: 17.11.6-ee.0 · 1.1 GB',
+  b1:'One step: back up the database and config, install, migrate.',
+  b2:'Around 10–20 minutes; GitLab will be unavailable for about 2.',
+  ask:'Upgrade? [y/N]', yes:'y',
+  rows:[['database and config backup','1.2 GB · 1 min · …/20260830-2103'],
+        ['package download','1.1 GB via proxy · 47 s'],
+        ['install','2 min'],['services','12/12 running']],
+  mig:'background migrations', migv:'3 remaining',
+  safe:'Ctrl-C is safe right now',
+  done:'✓ GitLab 17.11.6-ee', took:'took 00:11:38',
+  d1:'migrations finished · services 12/12 · backup …/20260830-2103',
+  d2:'package pinned: apt-mark hold gitlab-ee',
+  sw:'[l] по-русски'
+}};
+let lang='ru';
+function scrPatch(){
+  const d=L[lang];
+  /* ширина колонки считается от подписей локали, а не константой */
+  const cw=Math.max(...d.rows.map(r=>len(r[0])), len(d.mig))+3;
+  lines(['',
+   two(' <span class="b">GitLab 17.11.4-ee → 17.11.6-ee</span>','<span class="dim">'+d.head+'</span>   '),
+   ' <span class="dim">'+d.host+'</span>','',
+   '   <span class="ok">✓</span> <span class="dim">'+d.p1+'</span>',
+   '   <span class="ok">✓</span> <span class="dim">'+d.p2+'</span>','',
+   ' <span class="dim">'+d.b1+'</span>',
+   ' <span class="dim">'+d.b2+'</span>','',
+   ' <span class="b">'+d.ask+'</span> <span class="acc">'+d.yes+'</span>','',
+   '<span class="dim">'+'─'.repeat(W)+'</span>','',
+   two(' <span class="b">17.11.4-ee → 17.11.6-ee</span>','<span class="dim">00:04:12</span>   ')]);
+  d.rows.forEach(r=>row('   <span class="ok">✓</span> '+pad(r[0],cw)+'<span class="dim">'+r[1]+'</span>'));
+  row('   '+spin()+' '+pad(d.mig,cw)+'<span class="dim">'+d.migv+'</span>');
+  lines(['',' <span class="ok">'+d.safe+'</span>','',
+   '<span class="dim">'+'─'.repeat(W)+'</span>','',
+   two(' <span class="ok b">'+d.done+'</span>','<span class="dim">'+d.took+'</span>   '),
+   '   <span class="dim">'+d.d1+'</span>',
+   '   <span class="dim">'+d.d2+'</span>','',
+   ' <span class="dim">'+d.sw+'</span>','']);
+  api={ lang:()=>{ lang=lang==='ru'?'en':'ru'; redraw(); } };
+}
 
 /* ══════════ план ══════════ */
 function scrPlan(){
@@ -470,6 +533,11 @@ function scrNotify(){
 
 /* ══════════ вкладки ══════════ */
 const SCREENS={
+ patch:{cmd:'<b>sudo gitlab-upgrade</b>',mode:'патч',init:scrPatch,
+  keys:'<kbd>l</kbd> переключить язык',
+  notes:[['Повседневный сценарий, а не длинный путь','Обновление патча — один шаг на 10–20 минут. Полный бэкап, предзагрузка и требование tmux здесь были бы церемонией вокруг двенадцати минут работы. Профиль вычисляет планировщик, человек всегда набирает одно и то же.'],
+   ['Нажмите <kbd>l</kbd> — колонка меняет ширину','<code>database and config backup</code> на семь символов длиннее русской подписи. Ширина считается от строк активной локали, а не задана константой. Отсюда тест: снапшот каждого экрана в каждом языке с проверкой 78 колонок.'],
+   ['Что осталось от «большого» режима','Индикатор безопасности Ctrl-C и бэкап. Фаза dpkg одинаково опасна для патча и для мажорного апгрейда, а бэкап просто дешёвый: БД и конфиги, две минуты вместо восьмидесяти.']]},
  plan:{cmd:'<b>sudo gitlab-upgrade plan</b>',mode:'поток',init:scrPlan,keys:'',
   notes:[['Проверки идут, а не появляются списком','Каждая строка возникает со спиннером и закрывается результатом в своём темпе. Обращение к репозиторию через прокси заметно дольше остальных — и это видно.'],
    ['«Отката нет» — на экране','Не в README и не в <code>--help</code>. Это главное, что человек должен знать до <code>run --yes</code>, поэтому стоит там, где нельзя пролистать.']]},
@@ -515,7 +583,7 @@ function show(k){
 }
 function place(){
   const idx=tabs.findIndex(t=>t.dataset.s===cur);
-  const cols=window.matchMedia('(max-width: 52rem)').matches?4:8;
+  const cols=window.matchMedia('(max-width: 52rem)').matches?3:5;
   const rows=Math.ceil(tabs.length/cols);
   thumb.style.transform='translateX('+(idx%cols)*100+'%)';
   thumb.style.top='calc(4px + '+Math.floor(idx/cols)+' * (100% - 8px) / '+rows+')';
@@ -530,7 +598,8 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='Escape'&&api.esc){ e.preventDefault(); api.esc(); }
   else if((e.key==='j'||e.key==='J')&&api.jump) api.jump();
   else if((e.key==='m'||e.key==='M')&&api.toggle) api.toggle();
+  else if((e.key==='l'||e.key==='L')&&api.lang) api.lang();
 });
-show('plan');
+show('patch');
 })();
 </script>
