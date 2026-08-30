@@ -346,9 +346,9 @@ Core ──► EventBus ──┬──► JSONL-журнал на диске   
 
  Что делать
   1 посмотреть, что именно упало
-      sudo gitlab-rake gitlab:batched_background_migrations:status
+      sudo gitlab-rake gitlab:background_migrations:list
   2 починить и дожать миграцию
-      sudo gitlab-rake gitlab:batched_background_migrations:finalize \
+      sudo gitlab-rake gitlab:background_migrations:finalize \
         [BackfillProjectStatistics,projects,id,'[null]']
   3 когда миграции пройдут — продолжить с этого шага
       sudo gitlab-upgrade resume
@@ -359,6 +359,14 @@ Core ──► EventBus ──┬──► JSONL-журнал на диске   
  Состояние сохранено: /var/lib/gitlab-upgrade/state.json
  Журнал: /var/log/gitlab-upgrade/run-20260830-1331.jsonl
 ```
+
+Команды на этом экране не выдумываются, а берутся из таблицы починок
+(`src/checks/remedies.js`), сверенной с docs.gitlab.com. Это важно именно
+здесь: rake-задачи для фоновых миграций появились в 18.5 и переименовались
+в 18.9 — макет выше показывает форму для 18.9+, а на 16.x инструмент вместо
+несуществующей команды даёт ссылку на документацию. При нескольких аргументах
+задачи `finalize` запятая между ними экранируется обратным слэшем, иначе rake
+отвечает ошибкой про недопустимый символ.
 
 1. **«Работает ли GitLab прямо сейчас».** Блок «Состояние системы» идёт раньше инструкций, потому что это первое, что нужно человеку: можно ли не будить остальных.
 2. **«Что именно сломалось».** Имя миграции и текст ошибки БД, а не «ошибка при обновлении».

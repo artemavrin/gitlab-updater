@@ -40,3 +40,24 @@ export function clip(text, max) {
   const chars = [...String(text)];
   return chars.length <= max ? String(text) : chars.slice(0, Math.max(1, max - 1)).join('') + '\u2026';
 }
+
+/**
+ * Перенос по словам с учётом видимой длины.
+ *
+ * Обрезка на месте сообщения обходилась дорого: резалось именно объяснение,
+ * почему нельзя идти дальше. Длинное слово (путь, URL) не переносим — рвать
+ * путь посередине хуже, чем вылезти за колонку.
+ */
+export function wrap(text, max) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  if (!words.length) return [''];
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if ([...candidate].length <= max || !line) line = candidate;
+    else { lines.push(line); line = word; }
+  }
+  lines.push(line);
+  return lines;
+}

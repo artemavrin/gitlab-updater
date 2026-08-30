@@ -3,6 +3,7 @@ import { detectServices, missingKeyServices, parsePgVersion } from '../detect/se
 import { freeBytes, toGb, GB } from '../detect/disk.js';
 import { postgresRange, osCeiling, comparePg, pgMajor } from '../plan/matrices.js';
 import { parseVersion, compareVersions } from '../plan/version.js';
+import { remedyFor } from './remedies.js';
 
 /**
  * Проверки — данные, а не разбросанные if'ы.
@@ -174,7 +175,12 @@ export async function runChecks(ctx, { depth = DEPTH.FAST } = {}) {
   const findings = [];
   for (const check of selected) {
     try {
-      findings.push({ check: check.id, ...(await check.run(ctx)) });
+      const found = { check: check.id, ...(await check.run(ctx)) };
+      // Починка прикрепляется здесь, а не в каждой проверке: так экран и
+      // --json берут её из одного места и не могут разойтись.
+      findings.push(found.level === LEVEL.OK
+        ? found
+        : { ...found, remedy: remedyFor(found, { version: ctx.gitlabInfo?.version ?? ctx.plan?.current?.raw ?? null }) });
     } catch (err) {
       // Упавшая проверка — это «неизвестно», а не «в порядке».
       findings.push({ check: check.id, ...warn('check-failed', { check: check.id, detail: err.message }) });

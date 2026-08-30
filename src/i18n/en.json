@@ -331,5 +331,20 @@
   "event.stop.services-down": "services did not come back up",
   "event.stop.step-failed": "the step failed",
   "ui.interruptFix": "You would have to finish it by hand: dpkg --configure -a",
-  "ui.interruptWait": "[any key]       wait — dpkg usually takes 5-10 minutes"
+  "ui.interruptWait": "[any key]       wait — dpkg usually takes 5-10 minutes",
+  "remedy.sudo": "re-run under sudo",
+  "remedy.restart-service": "restart the services that are down",
+  "remedy.ctl-status": "look at what the services are doing",
+  "remedy.migrations-status": "see which migration is stuck and why",
+  "remedy.disk-usage": "find what is taking the space",
+  "remedy.apt-clean": "clear the apt package cache",
+  "remedy.who-holds-dpkg": "see which process holds the dpkg lock",
+  "remedy.stop-apt-timer": "stop the apt timers for the duration of the upgrade",
+  "remedy.pg-upgrade": "upgrade the bundled PostgreSQL (external databases are upgraded differently)",
+  "remedy.safe-for-os": "stop at the version this OS supports",
+  "remedy.detach": "run detached so a dropped SSH session does not interrupt it",
+  "remedy.title": "What to do",
+  "remedy.docs": "details:",
+  "remedy.migrations-list": "list the background migrations and their state",
+  "remedy.migrations-docs": "the rake task depends on your version — see the documentation"
 }

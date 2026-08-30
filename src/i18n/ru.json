@@ -332,5 +332,20 @@
   "event.stop.services-down": "сервисы не поднялись",
   "event.stop.step-failed": "шаг завершился ошибкой",
   "ui.interruptFix": "Выходить придётся руками: dpkg --configure -a",
-  "ui.interruptWait": "[любая клавиша]  подождать — dpkg обычно 5–10 минут"
+  "ui.interruptWait": "[любая клавиша]  подождать — dpkg обычно 5–10 минут",
+  "remedy.sudo": "перезапустить под sudo",
+  "remedy.restart-service": "поднять упавшие сервисы",
+  "remedy.ctl-status": "посмотреть, что с сервисами",
+  "remedy.migrations-status": "увидеть, какая миграция встала и почему",
+  "remedy.disk-usage": "найти, чем занято место",
+  "remedy.apt-clean": "очистить кэш пакетов apt",
+  "remedy.who-holds-dpkg": "узнать, какой процесс держит блокировку dpkg",
+  "remedy.stop-apt-timer": "остановить таймеры apt на время апгрейда",
+  "remedy.pg-upgrade": "обновить встроенный PostgreSQL (внешний обновляется иначе)",
+  "remedy.safe-for-os": "остановиться на версии, которую поддерживает эта ОС",
+  "remedy.detach": "запустить в фоне, чтобы обрыв SSH не прервал апгрейд",
+  "remedy.title": "Что делать",
+  "remedy.docs": "подробности:",
+  "remedy.migrations-list": "посмотреть список фоновых миграций и их состояние",
+  "remedy.migrations-docs": "rake-задача зависит от версии — см. документацию"
 }

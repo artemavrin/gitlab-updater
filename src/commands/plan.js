@@ -45,7 +45,7 @@ export async function commandPlan(ctx) {
 
   const checkResult = {
     ok: checks.ok, warnings: checks.warnings, critical: checks.critical, blocked: blocked(checks),
-    findings: checks.findings.map((f) => ({ id: f.id, check: f.check, level: f.level, params: f.params })),
+    findings: checks.findings.map((f) => ({ id: f.id, check: f.check, level: f.level, params: f.params, remedy: f.remedy ?? null })),
   };
   // План остаётся виден — он информативен, — но код возврата говорит правду:
   // выполнить его сейчас нельзя.
