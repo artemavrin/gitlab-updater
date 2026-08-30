@@ -1,17 +1,22 @@
 import { runChecks, DEPTH, blocked } from '../checks/index.js';
 import { LEVEL } from '../core/events.js';
-import { table } from '../render/format.js';
+import { table, width, pad, clip } from '../render/format.js';
 import { EXIT } from '../plan/planner.js';
 import { commandCheck } from './check.js';
 
 const MARK = { [LEVEL.OK]: '✓', [LEVEL.WARN]: '!', [LEVEL.CRITICAL]: '✗' };
 
-export function renderFindings(t, findings) {
-  return table(findings.map((f) => [
-    MARK[f.level] ?? '?',
-    t(`check.${f.check}.title`),
-    t(`check.${f.id}.${f.level}`, f.params),
-  ]), { indent: '   ' });
+const LINE = 78;
+
+export function renderFindings(t, findings, { limit = LINE } = {}) {
+  const titles = findings.map((f) => t(`check.${f.check}.title`));
+  // Сообщение обрезается по остатку строки: диагностика в тексте находки
+  // бывает длинной, а перенос сломал бы выравнивание колонок в терминале.
+  const head = 3 + 1 + 2 + width(titles) + 2;
+  return findings.map((f, i) =>
+    `   ${MARK[f.level] ?? '?'}  ${pad(titles[i], width(titles) + 2)}` +
+    clip(t(`check.${f.id}.${f.level}`, f.params), Math.max(10, limit - head))
+  );
 }
 
 /**

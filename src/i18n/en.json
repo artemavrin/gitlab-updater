@@ -205,5 +205,6 @@
   "result.doctor.critical": "how many critical",
   "result.doctor.findings": "findings: id, level, params",
   "result.doctor.blocked": "whether this stops the upgrade",
-  "check.postgres-above.warn": "version {have} is above the tested maximum {max} for {target}"
+  "check.postgres-above.warn": "version {have} is above the tested maximum {max} for {target}",
+  "result.plan.checks": "readiness check summary: ok, warnings, critical, blocked, findings"
 }

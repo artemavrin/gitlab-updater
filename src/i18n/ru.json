@@ -206,5 +206,6 @@
   "result.doctor.critical": "сколько критических",
   "result.doctor.findings": "находки: id, level, params",
   "result.doctor.blocked": "остановит ли это обновление",
-  "check.postgres-above.warn": "версия {have} выше протестированного максимума {max} для {target}"
+  "check.postgres-above.warn": "версия {have} выше протестированного максимума {max} для {target}",
+  "result.plan.checks": "итог проверок готовности: ok, warnings, critical, blocked, findings"
 }

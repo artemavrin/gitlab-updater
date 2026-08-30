@@ -63,3 +63,9 @@ jobs:
           node gitlab-upgrade.mjs check --json 2>/dev/null | jq -e '.error.code == "gitlab-not-found"' > /dev/null
           # --events не должен смешиваться с результатом на stdout
           node gitlab-upgrade.mjs version --json --events 2>/dev/null | jq -e '.command == "version"' > /dev/null
+          # на раннере нет GitLab: doctor обязан честно упереться, а не отрапортовать «всё в порядке»
+          set +e
+          node gitlab-upgrade.mjs doctor --json > /tmp/doc.json 2>/dev/null; dcode=$?
+          set -e
+          test "$dcode" -eq 1
+          jq -e '.error.code == "checks-failed" or .error.code == "gitlab-not-found"' /tmp/doc.json > /dev/null

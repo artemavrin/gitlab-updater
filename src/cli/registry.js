@@ -80,10 +80,13 @@ export const COMMANDS = {
     mutating: false,
     requiresRoot: true,
     flags: [...TARGETING, ...NETWORKING, ...READINESS, ...COMMON, 'explain-config'],
-    exits: { [EXIT.CURRENT]: 'current', [EXIT.PATCH]: 'patch', [EXIT.MINOR]: 'minor', [EXIT.MAJOR]: 'major', [EXIT.ERROR]: 'error' },
+    // Код 1 означает не «нет плана», а «план есть, но выполнить его нельзя»:
+    // проверки готовности не пройдены.
+    exits: { [EXIT.CURRENT]: 'current', [EXIT.PATCH]: 'patch', [EXIT.MINOR]: 'minor', [EXIT.MAJOR]: 'major', [EXIT.ERROR]: 'checks-failed' },
     result: {
       current: 'string', target: 'string|null', updateKind: 'string|null', profile: 'string',
       steps: 'array', limitedBy: 'string|null', policy: 'object|null', os: 'object|null', edition: 'string|null',
+      checks: 'object',
     },
   },
   'refresh-path': {

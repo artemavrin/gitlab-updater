@@ -6,7 +6,7 @@ import { createTranslator } from '../src/i18n/index.js';
 import { commandCheck } from '../src/commands/check.js';
 import { commandPlan } from '../src/commands/plan.js';
 import { EXIT } from '../src/plan/planner.js';
-import { fixturesFor, osReleaseJammy, osReleaseFocal } from './fixtures/index.js';
+import { fixturesFor, checkFixtures, osReleaseJammy, osReleaseFocal } from './fixtures/index.js';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,12 +25,13 @@ const osPath = (text) => {
 };
 
 const ctx = (version, { lang = 'ru', os = osReleaseJammy, ...flags } = {}) => ({
-  exec: createExec({ mode: MODE.REPLAY, fixtures: fixturesFor({ version }) }),
+  exec: createExec({ mode: MODE.REPLAY, fixtures: { ...fixturesFor({ version }), ...checkFixtures() } }),
   t: createTranslator(lang),
-  flags: { from: null, to: null, targetMajor: null, safeForOs: false, patchOnly: false, ...flags },
+  flags: { from: null, to: null, targetMajor: null, safeForOs: false, patchOnly: false, force: false, minFreeGb: null, ...flags },
   config: { proxy: 'socks5h://svc:s3cret@10.0.0.5:1080' },
   data,
   osPath: osPath(os),
+  uid: 0, env: {}, isTty: false,
 });
 
 test('check на патче возвращает код 10 и называет версию', async () => {
@@ -88,9 +89,43 @@ test('план рендерится в обеих локалях и уклады
   }
 });
 
+test('план показывает проверки готовности, а не только шаги', async () => {
+  const text = (await commandPlan(ctx('17.11.4-ee.0'))).lines.join('\n');
+  assert.match(text, /сервисы GitLab/);
+  assert.match(text, /пройдено/);
+});
+
+/**
+ * План остаётся виден — он информативен, — но код возврата говорит правду:
+ * выполнить его сейчас нельзя.
+ */
+test('критическая проверка меняет код плана на ошибку, но план не прячет', async () => {
+  const broken = ctx('17.11.4-ee.0');
+  broken.exec = createExec({ mode: MODE.REPLAY, fixtures: {
+    ...fixturesFor({ version: '17.11.4-ee.0' }), ...checkFixtures(),
+    'test -f /etc/gitlab/gitlab-secrets.json': { code: 1, stdout: '' },
+  } });
+  const r = await commandPlan(broken);
+  assert.equal(r.code, EXIT.ERROR);
+  assert.equal(r.errorCode, 'checks-failed');
+  assert.equal(r.result.checks.blocked, true);
+  assert.match(r.lines.join('\n'), /17\.11\.6-ee\.0/, 'план обязан остаться видимым');
+});
+
+test('длинная диагностика обрезается, а не ломает выравнивание', async () => {
+  const noisy = ctx('17.11.4-ee.0');
+  noisy.exec = createExec({ mode: MODE.REPLAY, fixtures: {
+    ...fixturesFor({ version: '17.11.4-ee.0' }), ...checkFixtures(),
+    'gitlab-psql --version': { code: 1, stdout: '', stderr: 'x'.repeat(400) },
+  } });
+  for (const line of (await commandPlan(noisy)).lines) {
+    assert.ok([...line].length <= 78, `строка длиннее 78: ${line}`);
+  }
+});
+
 test('недоступный репозиторий — ошибка с подсказкой, а не пустой план', async () => {
   const broken = ctx('17.11.4-ee.0');
-  broken.exec = createExec({ mode: MODE.REPLAY, fixtures: { ...fixturesFor(), 'apt-cache madison gitlab-ee': { code: 100, stdout: '', stderr: 'E: no packages' } } });
+  broken.exec = createExec({ mode: MODE.REPLAY, fixtures: { ...fixturesFor(), ...checkFixtures(), 'apt-cache madison gitlab-ee': { code: 100, stdout: '', stderr: 'E: no packages' } } });
   const r = await commandCheck(broken);
   assert.equal(r.code, EXIT.ERROR);
   assert.match(r.lines.join('\n'), /proxy test/);

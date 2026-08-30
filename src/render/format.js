@@ -34,3 +34,9 @@ export const bytes = (n, t) => {
     ? t('unit.gb', { n: Math.round(gb * 10) / 10 })
     : t('unit.mb', { n: Math.round(n / 1024 ** 2) });
 };
+
+/** Обрезает по видимой длине: диагностика не должна ломать вёрстку строки. */
+export function clip(text, max) {
+  const chars = [...String(text)];
+  return chars.length <= max ? String(text) : chars.slice(0, Math.max(1, max - 1)).join('') + '\u2026';
+}
