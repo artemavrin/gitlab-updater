@@ -3,7 +3,20 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { acquireLock, LockedError } from '../src/core/lock.js';
+
+/**
+ * Живой и мёртвый pid берутся из реальности, а не угадываются.
+ * `process.pid + 1` живёт не на каждой машине — на раннере CI его нет,
+ * и тест, зелёный локально, падал там.
+ */
+const ALIVE_PID = process.ppid;
+const deadPid = () => {
+  // Процесс, который гарантированно завершился: его pid точно не занят.
+  const r = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+  return r.pid;
+};
 import { saveState, loadState, clearState, statePath, reconcile, STATE_VERSION } from '../src/core/state.js';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'glu-state-'));
@@ -19,14 +32,14 @@ test('замок держится и освобождается', () => {
 test('второй экземпляр не запускается, пока первый жив', () => {
   const d = dir();
   const lock = acquireLock(join(d, 'lock'));
-  assert.throws(() => acquireLock(join(d, 'lock'), { pid: process.pid + 1 }), LockedError);
+  assert.throws(() => acquireLock(join(d, 'lock'), { pid: ALIVE_PID }), LockedError);
   lock.release();
 });
 
 test('замок мёртвого процесса забирается, а не блокирует навсегда', () => {
   const d = dir();
   const path = join(d, 'lock');
-  writeFileSync(path, '999999\n');   // почти наверняка мёртвый pid
+  writeFileSync(path, `${deadPid()}\n`);
   const lock = acquireLock(path);
   assert.equal(String(readFileSync(path, 'utf8')).trim(), String(process.pid));
   lock.release();
@@ -37,9 +50,9 @@ test('release не удаляет замок, перехваченный дру�
   const d = dir();
   const path = join(d, 'lock');
   const lock = acquireLock(path);
-  writeFileSync(path, '424242\n');          // кто-то другой перехватил
+  writeFileSync(path, `${ALIVE_PID}\n`);     // кто-то другой перехватил
   lock.release();
-  assert.equal(String(readFileSync(path, 'utf8')).trim(), '424242', 'удалён чужой замок');
+  assert.equal(String(readFileSync(path, 'utf8')).trim(), String(ALIVE_PID), 'удалён чужой замок');
 });
 
 test('битый замок не роняет запуск', () => {

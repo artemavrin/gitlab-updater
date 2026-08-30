@@ -160,7 +160,9 @@ test('не поднявшиеся после установки сервисы �
 
 test('второй экземпляр не запускается поверх первого', async () => {
   const { ctx, dir } = bed();
-  const held = acquireLock(join(dir, 'lock'), { pid: process.pid + 1 });
+  // Родительский процесс жив на любой машине, в отличие от process.pid + 1:
+  // на раннере CI такого pid нет, и замок справедливо признавался мёртвым.
+  const held = acquireLock(join(dir, 'lock'), { pid: process.ppid });
   const r = await commandRun(ctx);
   assert.equal(r.errorCode, 'already-running');
   held.release();
