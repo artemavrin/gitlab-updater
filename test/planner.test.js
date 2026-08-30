@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseMadison, compareVersions } from '../src/plan/version.js';
 import { buildPlan, PROFILE, exitCodeFor, EXIT, policyFor } from '../src/plan/planner.js';
-import { madison1711 } from './fixtures/index.js';
+import { madison1711, madisonAncient } from './fixtures/index.js';
 
 const stops = JSON.parse(readFileSync('data/upgrade-path.json', 'utf8')).stops;
 const available = parseMadison(madison1711);
@@ -19,7 +19,7 @@ test('патч внутри минорной версии — один шаг и
 test('длинный путь проходит через все обязательные остановки между началом и целью', () => {
   const p = plan('15.11.13-ee.0');
   const got = p.steps.map((s) => `${s.major}.${s.minor}`);
-  assert.deepEqual(got, ['16.3', '16.7', '16.11', '17.3', '17.5', '17.8', '17.11']);
+  assert.deepEqual(got, ['16.3', '16.7', '16.11', '17.1', '17.3', '17.5', '17.8', '17.11']);
   assert.equal(p.profile, PROFILE.LONG);
 });
 
@@ -84,6 +84,20 @@ test('политика профиля соответствует таблице 
   );
   assert.equal(policyFor(PROFILE.LONG).predownload, true);
   assert.equal(policyFor(PROFILE.LONG).backup, 'first-full');
+});
+
+test('условная остановка 17.1 не пропускается: её пропуск ломает часть инстансов', () => {
+  const p = plan('16.11.10-ee.0');
+  const got = p.steps.map((s) => `${s.major}.${s.minor}`);
+  assert.ok(got.includes('17.1'), `17.1 выпала из пути: ${got.join(' → ')}`);
+  assert.equal(p.steps.find((s) => s.minor === 1 && s.major === 17).reason, 'conditional-stop');
+});
+
+test('остановки ниже 13.1 не потеряны — путь с древней базы полон', () => {
+  const available = parseMadison(madisonAncient);
+  const p = buildPlan({ current: '11.11.8-ee.0', available, stops });
+  const got = p.steps.map((s) => `${s.major}.${s.minor}`);
+  assert.deepEqual(got, ['12.0', '12.1', '12.10', '13.0', '13.1']);
 });
 
 test('нет пакета для обязательной остановки — критическая находка, а не тихий пропуск', () => {

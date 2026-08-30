@@ -116,5 +116,20 @@
   "error.code.os-unsupported": "ОС не поддерживается: нужны Ubuntu или Debian",
   "error.code.gitlab-not-found": "GitLab Omnibus на сервере не найден",
   "error.code.repository-unreachable": "репозиторий пакетов недоступен — проверьте прокси",
-  "error.code.precondition-failed": "не выполнено предварительное условие"
+  "error.code.precondition-failed": "не выполнено предварительное условие",
+  "plan.reason.conditional-stop": "условная остановка — проходим на всякий случай",
+  "plan.stale": "Данные о пути обновления проверялись {date} — возможно, они устарели. Обновите: gitlab-upgrade refresh-path",
+  "refresh.same": "Данные актуальны: {n} остановок, расхождений с официальным файлом нет.",
+  "refresh.diff": "Расхождения с официальным файлом: {n}",
+  "refresh.added": "добавилось",
+  "refresh.removed": "пропало",
+  "refresh.written": "Записано в {path}. Проверено {date}.",
+  "refresh.dryRun": "Ничего не записано. Чтобы применить: gitlab-upgrade refresh-path --yes",
+  "refresh.failed": "Не удалось получить официальный файл: {reason}",
+  "cmd.refresh-path.summary": "сверить обязательные остановки с официальным upgrade_path.yml",
+  "error.code.upgrade-path-unreachable": "официальный upgrade_path.yml недоступен",
+  "result.refresh-path.stops": "сколько остановок в официальном файле",
+  "result.refresh-path.added": "остановки, которых у нас не было",
+  "result.refresh-path.removed": "остановки, которых больше нет в официальном файле",
+  "result.refresh-path.applied": "записаны ли изменения в файл данных"
 }

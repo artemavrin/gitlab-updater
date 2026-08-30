@@ -115,5 +115,20 @@
   "error.code.os-unsupported": "unsupported OS: Ubuntu or Debian is required",
   "error.code.gitlab-not-found": "no GitLab Omnibus found on this server",
   "error.code.repository-unreachable": "package repository unreachable - check the proxy",
-  "error.code.precondition-failed": "a precondition was not met"
+  "error.code.precondition-failed": "a precondition was not met",
+  "plan.reason.conditional-stop": "conditional stop - taken to be safe",
+  "plan.stale": "The upgrade path data was verified on {date} and may be out of date. Refresh it: gitlab-upgrade refresh-path",
+  "refresh.same": "Data is current: {n} stops, no differences from the official file.",
+  "refresh.diff": "Differences from the official file: {n}",
+  "refresh.added": "added",
+  "refresh.removed": "gone",
+  "refresh.written": "Written to {path}. Verified {date}.",
+  "refresh.dryRun": "Nothing written. To apply: gitlab-upgrade refresh-path --yes",
+  "refresh.failed": "Could not fetch the official file: {reason}",
+  "cmd.refresh-path.summary": "compare the required stops with the official upgrade_path.yml",
+  "error.code.upgrade-path-unreachable": "the official upgrade_path.yml is unreachable",
+  "result.refresh-path.stops": "how many stops the official file has",
+  "result.refresh-path.added": "stops we did not have",
+  "result.refresh-path.removed": "stops no longer in the official file",
+  "result.refresh-path.applied": "whether the changes were written to the data file"
 }

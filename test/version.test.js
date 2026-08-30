@@ -22,7 +22,7 @@ test('сравнение учитывает все три компонента, 
 
 test('madison разбирается и сортируется по возрастанию', () => {
   const v = parseMadison(madison1711);
-  assert.equal(v.length, 10);
+  assert.equal(v.length, 11);
   assert.equal(v[0].raw, '15.11.13-ee.0');
   assert.equal(v.at(-1).raw, '17.11.6-ee.0');
 });

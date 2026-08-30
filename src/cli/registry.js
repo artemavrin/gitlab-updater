@@ -61,6 +61,13 @@ export const COMMANDS = {
       steps: 'array', limitedBy: 'string|null', policy: 'object|null', os: 'object|null', edition: 'string|null',
     },
   },
+  'refresh-path': {
+    mutating: false,     // трогает только свой файл данных, не сервер
+    requiresRoot: false,
+    flags: ['proxy', 'proxy-ca', 'yes', ...COMMON],
+    exits: { 0: 'ok', 1: 'error' },
+    result: { stops: 'number', added: 'array', removed: 'array', applied: 'boolean' },
+  },
   api: {
     mutating: false,
     requiresRoot: false,

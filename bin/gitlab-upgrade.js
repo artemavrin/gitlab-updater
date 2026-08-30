@@ -10,6 +10,7 @@ import { EventBus } from '../src/core/events.js';
 import { createJsonRenderer } from '../src/render/plain.js';
 import { commandCheck } from '../src/commands/check.js';
 import { commandPlan } from '../src/commands/plan.js';
+import { commandRefreshPath } from '../src/commands/refreshPath.js';
 import { detectOs } from '../src/detect/os.js';
 import { detectGitlab } from '../src/detect/gitlab.js';
 import { EXIT } from '../src/plan/planner.js';
@@ -26,7 +27,7 @@ for (const stream of [process.stdout, process.stderr]) {
   stream.on('error', (err) => { if (err.code === 'EPIPE') process.exit(0); });
 }
 
-const RUNNERS = { check: commandCheck, plan: commandPlan };
+const RUNNERS = { check: commandCheck, plan: commandPlan, 'refresh-path': commandRefreshPath };
 
 async function main(argv) {
   const early = createTranslator(resolveLocale({}));
@@ -72,6 +73,7 @@ async function main(argv) {
     exec, t, flags, config, bus,
     data: { upgradePath, osMatrix, pgRequirements },
     osPath: '/etc/os-release',
+    dataPath: new URL('../data/upgrade-path.json', import.meta.url).pathname,
   };
   ctx.os = detectOs(ctx.osPath);
   ctx.gitlabInfo = await detectGitlab(exec).catch(() => null);

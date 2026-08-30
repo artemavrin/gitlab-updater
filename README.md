@@ -59,6 +59,10 @@ sudo gitlab-upgrade --proxy socks5h://user:pass@10.0.0.5:1080 check
 
 Proxy settings go into a temporary `apt.conf` passed with `apt-get -c`, never into `/etc/apt/apt.conf.d/`: `kill -9` leaves no misconfigured system behind, and the password never appears in `ps aux`. TLS verification is never disabled; for an intercepting proxy use `--proxy-ca`. Package integrity rests on the repository's GPG signature regardless of TLS.
 
+The required stops in `data/upgrade-path.json` are generated from GitLab's official `config/upgrade_path.yml`, never written by hand. `gitlab-upgrade refresh-path` compares them with upstream and shows a diff; a test fails if they drift, and `plan` warns when the data has not been verified for 180 days.
+
+Conditional stops — currently 17.1 — are taken like required ones. Whether one applies to a given instance cannot be determined reliably, and an extra step costs about forty minutes against the integrity of the data.
+
 ## For agents
 
 The CLI is discoverable without parsing human help. `gitlab-upgrade api` (or `--help --json`) emits a catalog of every command, flag, exit code, result field and error code:

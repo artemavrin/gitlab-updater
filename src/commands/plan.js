@@ -3,6 +3,7 @@ import { policyFor, PROFILE } from '../plan/planner.js';
 import { table, pad, width } from '../render/format.js';
 import { redactUrl } from '../core/redact.js';
 import { EXIT } from '../plan/planner.js';
+import { isStale } from '../plan/upgradePathSource.js';
 
 /** План: то же обнаружение, что у check, плюс читаемый разбор пути. */
 export async function commandPlan(ctx) {
@@ -51,6 +52,10 @@ export async function commandPlan(ctx) {
     if (t.has(`finding.${f.id}`)) lines.push(` ! ${t(`finding.${f.id}`, f)}`);
   }
   if (plan.findings.length) lines.push('');
+
+  if (isStale(ctx.data.upgradePath.verified_at)) {
+    lines.push(` ! ${t('plan.stale', { date: ctx.data.upgradePath.verified_at })}`, '');
+  }
 
   if (plan.profile !== PROFILE.PATCH) {
     lines.push(` ${t('plan.noRollback')}`);

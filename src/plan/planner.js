@@ -1,4 +1,5 @@
 import { parseVersion, compareVersions, latestPatchOf, minorOf, sameMinor, shortVersion } from './version.js';
+import { stopVersions } from './upgradePathSource.js';
 
 export const PROFILE = { CURRENT: 'current', PATCH: 'patch', MINOR: 'minor', LONG: 'long' };
 
@@ -74,14 +75,18 @@ export function buildPlan({ current, available, stops, osMax = null, targetMajor
   const ownLatest = latestPatchOf(sorted, cur.major, cur.minor);
   if (ownLatest && compareVersions(ownLatest, cur) > 0) push(ownLatest, 'latest-patch-of-current-minor');
 
-  for (const stop of stops) {
+  for (const entry of stops) {
+    const stop = typeof entry === 'string' ? entry : entry.version;
+    const conditional = typeof entry === 'object' && entry.conditional === true;
     const s = parseVersion(stop);
     if (!s) continue;
     if (s.major < cur.major || (s.major === cur.major && s.minor <= cur.minor)) continue;
     if (s.major > top.v.major || (s.major === top.v.major && s.minor > top.v.minor)) continue;
     const patch = latestPatchOf(sorted, s.major, s.minor);
-    if (patch) push(patch, 'required-stop');
-    else findings.push({ id: 'missing-stop-package', level: 'critical', stop: minorOf(s) });
+    // Условная остановка нужна не каждому инстансу, но определить это надёжно
+    // мы не можем. Лишний шаг стоит времени, пропущенный — целостности данных.
+    if (patch) push(patch, conditional ? 'conditional-stop' : 'required-stop');
+    else if (!conditional) findings.push({ id: 'missing-stop-package', level: 'critical', stop: minorOf(s) });
   }
 
   push(top.v, top.reason === 'latest-available' ? 'target' : top.reason);

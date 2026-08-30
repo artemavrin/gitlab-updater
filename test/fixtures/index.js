@@ -6,10 +6,21 @@ export const madison1711 = `
    gitlab-ee | 17.8.7-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
    gitlab-ee | 17.5.5-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
    gitlab-ee | 17.3.7-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
+   gitlab-ee | 17.1.8-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
    gitlab-ee | 16.11.10-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
    gitlab-ee | 16.7.10-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
    gitlab-ee | 16.3.9-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
    gitlab-ee | 15.11.13-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
+`;
+
+/** Старый инстанс: проверяем, что остановки ниже 13.1 не потеряны. */
+export const madisonAncient = `
+   gitlab-ee | 13.0.14-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu bionic/main amd64 Packages
+   gitlab-ee | 13.1.11-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu bionic/main amd64 Packages
+   gitlab-ee | 12.10.14-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu bionic/main amd64 Packages
+   gitlab-ee | 12.1.17-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu bionic/main amd64 Packages
+   gitlab-ee | 12.0.12-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu bionic/main amd64 Packages
+   gitlab-ee | 11.11.8-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu bionic/main amd64 Packages
 `;
 
 export const osReleaseJammy = `PRETTY_NAME="Ubuntu 22.04.4 LTS"
