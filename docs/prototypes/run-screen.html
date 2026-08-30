@@ -51,6 +51,8 @@
     font-variant-numeric:tabular-nums;
   }
   .grow{ flex:1 1 auto; min-height:0; }
+  .view{ display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
+  .view[hidden]{ display:none; }
   .feed{ flex:1 1 auto; min-height:0; overflow-y:auto; }
   .ln{ white-space:pre; padding:0 1rem; min-height:1.5em; }
   .ok{color:var(--t-ok)} .warn{color:var(--t-warn)} .crit{color:var(--t-crit)}
@@ -144,13 +146,13 @@
   </div>
   <div id="stage"></div>
 </div>
-<p class="hint"><kbd>c</kbd> нажать Ctrl-C · <kbd>j</kbd> прыгнуть к фазе dpkg</p>
+<p class="hint"><kbd>p</kbd> открыть путь · <kbd>c</kbd> нажать Ctrl-C · <kbd>j</kbd> прыгнуть к фазе dpkg</p>
 
 <nav class="proto-picker" data-position="top" aria-label="Prototype variants">
   <span class="proto-picker-highlight" aria-hidden="true"></span>
-  <button class="proto-picker-item" data-active aria-current="true">Шапка</button>
-  <button class="proto-picker-item">Строка</button>
-  <button class="proto-picker-item">Веха</button>
+  <button class="proto-picker-item" data-active aria-current="true">Ветка</button>
+  <button class="proto-picker-item">Таблица</button>
+  <button class="proto-picker-item">Шкала</button>
   <span class="proto-picker-divider" aria-hidden="true"></span>
   <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
 </nav>
@@ -190,7 +192,7 @@ function row(html, cls){
 /* общая последовательность фаз шага 3 */
 const PHASES = [
   { k:'disk',    at:200,  dur:900,  base:4,   done:13,  label:'место на диске',   val:'139 ГБ свободно' },
-  { k:'backup',  at:1200, dur:2400, base:14,  done:204, label:'бэкап быстрый',    val:'2.1 ГБ · 3 мин · /mnt/backup/gitlab/20260830-1412' },
+  { k:'backup',  at:1200, dur:2400, base:14,  done:204, label:'бэкап быстрый',    val:'2.1 ГБ · 3 мин · …/gitlab/20260830-1412' },
   { k:'install', at:3700, dur:4300, base:211, done:615, label:'установка пакета', val:'из кэша · 6 мин', danger:true },
   { k:'svc',     at:8100, dur:1400, base:622, done:708, label:'сервисы',          val:'12/12 running' },
   { k:'mig',     at:9600, dur:0,    base:715, label:'фоновые миграции', val:null }
@@ -213,78 +215,121 @@ function play(skip, hooks){
   A(9600, () => hooks.migrations());
 }
 
-/* ═══════════ Три ленты, расходящиеся по месту таймлайна ═══════════ */
-/* Общее для всех: история прокручивается, живёт только закреплённая строка. */
+/* ═══════════════════════════════════════════════════════════════════
+   Основной экран во всех вариантах один и тот же — лента.
+   Расходятся только доп. экраны пути, открываемые по [p].
+   Все три вертикальные: терминал построчный, поперёк ему тесно.
+   ═══════════════════════════════════════════════════════════════════ */
 
-const DONE = 2;                       /* шаги 1-2 позади, идёт 3-й */
-function chainFull(){
-  const marks = ' ' + CHAIN.map((_, i) =>
-    (i < DONE ? '<span class="ok">●</span>'
-     : i === DONE ? '<span class="acc">◐</span>'
-     : '<span class="dim">○</span>') +
-    (i < 5 ? '<span class="dim">────────</span>' : '')).join('');
-  const labels = ' <span class="dim">' + CHAIN.map(v => pad(v, 9)).join('') + '</span>';
-  return [marks, labels];
-}
-const chainMini = () => CHAIN.map((_, i) =>
-  i < DONE ? '<span class="ok">●</span>'
-  : i === DONE ? '<span class="acc">◐</span>'
-  : '<span class="dim">○</span>').join('');
-
-const HISTORY = [
-  [' <span class="dim">13:31:20</span>  <span class="b">шаг 1/6</span>  <span class="dim">16.3.9-ee</span>',
-   '   <span class="ok">✓</span> бэкап полный              <span class="dim">187 ГБ · 79 мин</span>',
-   '   <span class="ok">✓</span> установка пакета          <span class="dim">из кэша · 7 мин</span>',
-   '   <span class="ok">✓</span> фоновые миграции          <span class="dim">132 → 0 · 41 мин</span>',
-   ' <span class="dim">15:38:47</span>  <span class="ok">шаг 1/6 готово за 02:07:27</span>'],
-  [' <span class="dim">15:38:48</span>  <span class="b">шаг 2/6</span>  <span class="dim">16.7.10-ee</span>',
-   '   <span class="ok">✓</span> бэкап быстрый             <span class="dim">1.9 ГБ · 3 мин</span>',
-   '   <span class="ok">✓</span> установка пакета          <span class="dim">из кэша · 5 мин</span>',
-   '   <span class="ok">✓</span> фоновые миграции          <span class="dim">88 → 0 · 30 мин</span>',
-   ' <span class="dim">16:19:55</span>  <span class="ok">шаг 2/6 готово за 00:41:07</span>'],
-  [' <span class="dim">16:19:56</span>  <span class="b">шаг 3/6</span>  <span class="dim">16.11.10-ee</span>']
+const STEPS = [
+  { v:'16.3.9-ee',   st:'готово', start:'13:31:20', dur:'2:07:27', min:127, bk:'187 ГБ', bkind:'полный',  mig:'132 → 0' },
+  { v:'16.7.10-ee',  st:'готово', start:'15:38:48', dur:'0:41:07', min:41,  bk:'1.9 ГБ', bkind:'быстрый', mig:'88 → 0'  },
+  { v:'16.11.10-ee', st:'сейчас', start:'16:19:56', dur:null,      min:50,  bk:'2.1 ГБ', bkind:'быстрый', mig:null      },
+  { v:'17.3.7-ee',   st:'ждёт',   min:35 },
+  { v:'17.5.5-ee',   st:'ждёт',   min:30 },
+  { v:'17.11.6-ee',  st:'цель',   min:45 }
 ];
+const cls = st => st === 'готово' ? 'ok' : st === 'сейчас' ? 'acc' : 'dim';
+const dash = '<span class="dim">—</span>';
 
-/* веха: путь печатается в саму ленту на границе шагов */
-function milestone(doneCount){
-  const marks = CHAIN.map((_, i) =>
-    (i < doneCount ? '<span class="ok">●</span>'
-     : i === doneCount ? '<span class="acc">◐</span>'
-     : '<span class="dim">○</span>') +
-    (i < 5 ? '<span class="dim">────────</span>' : '')).join('');
-  return ['',
-          ' ' + marks + '   <span class="dim">шаг ' + (doneCount + 1) + ' из 6</span>',
-          ' <span class="dim">' + CHAIN.map(v => pad(v, 9)).join('') + '</span>',
-          ''];
+/* ── A · Ветка: вертикальный рельс, как git log --graph ── */
+function timelineBranch(S){
+  const out = [];
+  STEPS.forEach((s, i) => {
+    const mark = s.st === 'готово' ? '<span class="ok">●</span>'
+               : s.st === 'сейчас' ? '<span class="acc">◐</span>'
+               : '<span class="dim">○</span>';
+    const right = s.dur ? s.dur : (s.st === 'сейчас' ? clock(S.step) : '~' + s.min + ' мин');
+    out.push(' ' + mark + '  ' + pad('<span class="b">' + s.v + '</span>', 17) +
+             '<span class="' + cls(s.st) + '">' + pad(s.st, 9) + '</span>' +
+             '<span class="dim">' + right + '</span>');
+    let detail = '';
+    if (s.st === 'готово') detail = 'бэкап ' + s.bkind + ' ' + s.bk + ' · миграции ' + s.mig;
+    else if (s.st === 'сейчас') detail = 'бэкап ' + s.bkind + ' ' + s.bk + ' · ' + spin() +
+      ' <span class="b">' + S.remaining + '</span> миграций, −8 за 10 мин';
+    out.push(' <span class="dim">' + (i < STEPS.length - 1 ? '│' : ' ') + '</span>' +
+             (detail ? '  <span class="dim">' + detail + '</span>' : ''));
+  });
+  return out;
 }
 
-function buildStream(mode, skip){
+/* ── B · Таблица: только данные, никакой графики ── */
+function timelineTable(S){
+  const head = '  <span class="dim">' + pad('шаг', 5) + pad('версия', 15) + pad('статус', 9) +
+               pad('начало', 11) + pad('длительность', 14) + pad('бэкап', 9) + 'миграции</span>';
+  const rule = '  <span class="dim">' + '─'.repeat(W - 4) + '</span>';
+  const rows = STEPS.map((s, i) => {
+    const dur  = s.dur ? s.dur : (s.st === 'сейчас' ? clock(S.step) : '~' + s.min + ' мин');
+    const mig  = s.mig ? s.mig : (s.st === 'сейчас' ? S.remaining + ' осталось' : '—');
+    return '  ' + pad(String(i + 1), 5) +
+           pad('<span class="b">' + s.v + '</span>', 15) +
+           '<span class="' + cls(s.st) + '">' + pad(s.st, 9) + '</span>' +
+           '<span class="dim">' + pad(s.start || '—', 11) + pad(dur, 14) +
+           pad(s.bk || '—', 9) + mig + '</span>';
+  });
+  return [head, rule, ...rows, rule,
+    '  <span class="dim">' + pad('', 5) + 'прошло ' + clock(OVERALL + S.step) +
+    ' из примерно 6:10 · осталось около 2 ч 40 мин</span>'];
+}
+
+/* ── C · Шкала: ось — время, а не номер шага ── */
+function timelineScale(S){
+  const unit = 5;                                  /* один символ ≈ 5 минут */
+  const wide = m => Math.max(1, Math.round(m / unit));
+  const out = STEPS.map(s => {
+    let barHtml;
+    if (s.st === 'готово') barHtml = '<span class="ok">' + '█'.repeat(wide(s.min)) + '</span>';
+    else if (s.st === 'сейчас'){
+      const doneW = Math.max(1, Math.round((S.step / 60) / unit));
+      barHtml = '<span class="acc">' + '█'.repeat(doneW) + '</span>' +
+                '<span class="dim">' + '░'.repeat(Math.max(0, wide(s.min) - doneW)) + '</span>';
+    } else barHtml = '<span class="dim">' + '░'.repeat(wide(s.min)) + '</span>';
+    const right = s.dur ? s.dur : (s.st === 'сейчас' ? clock(S.step) : '~' + s.min + ' мин');
+    const tail  = s.st === 'сейчас' ? 'сейчас · ' + spin() + ' миграции ' + S.remaining : s.st;
+    return ' ' + pad('<span class="b">' + s.v + '</span>', 15) +
+           pad(barHtml, 28) + '<span class="dim">' + pad(right, 10) + tail + '</span>';
+  });
+  const perHour = Math.round(60 / unit);
+  let ruler = '0';
+  for (let h = 1; h <= 2; h++) ruler += '─'.repeat(perHour - 2) + h + ' ч';
+  return [...out, '', ' ' + pad('', 15) + '<span class="dim">' + ruler + '</span>',
+          ' ' + pad('', 15) + '<span class="dim">один █ ≈ 5 минут</span>'];
+}
+
+const TIMELINES = { branch: timelineBranch, table: timelineTable, scale: timelineScale };
+
+/* ═══════════ приложение: лента + доп. экран пути ═══════════ */
+function buildApp(kind, skip){
   clearTimers();
   requestAnimationFrame(() => {
     stage.innerHTML = '';
     skip = skip || 0;
 
-    /* «Шапка»: путь закреплён сверху и не прокручивается */
-    if (mode === 'header'){
-      sink = stage;
-      chainFull().forEach(t => row(t));
-      row('<span class="dim">' + '─'.repeat(W) + '</span>');
-    }
+    const vFeed = document.createElement('div'); vFeed.className = 'view';
+    const vPath = document.createElement('div'); vPath.className = 'view'; vPath.hidden = true;
+    stage.append(vFeed, vPath);
 
     const feed = document.createElement('div'); feed.className = 'feed';
     const rule = document.createElement('div'); rule.className = 'ln';
     const pin  = document.createElement('div'); pin.className  = 'ln';
     rule.innerHTML = '<span class="dim">' + '─'.repeat(W) + '</span>';
-    stage.append(feed, rule, pin);
+    vFeed.append(feed, rule, pin);
     sink = feed;
 
-    HISTORY.forEach((block, i) => {
-      if (mode === 'milestone' && i > 0) milestone(i).forEach(t => row(t));
-      else if (i > 0) row('');
-      block.forEach(t => row(t));
-    });
+    [' <span class="dim">13:31:20</span>  <span class="b">шаг 1/6</span>  <span class="dim">16.3.9-ee</span>',
+     '   <span class="ok">✓</span> бэкап полный              <span class="dim">187 ГБ · 79 мин</span>',
+     '   <span class="ok">✓</span> установка пакета          <span class="dim">из кэша · 7 мин</span>',
+     '   <span class="ok">✓</span> фоновые миграции          <span class="dim">132 → 0 · 41 мин</span>',
+     ' <span class="dim">15:38:47</span>  <span class="ok">шаг 1/6 готово за 02:07:27</span>', '',
+     ' <span class="dim">15:38:48</span>  <span class="b">шаг 2/6</span>  <span class="dim">16.7.10-ee</span>',
+     '   <span class="ok">✓</span> бэкап быстрый             <span class="dim">1.9 ГБ · 3 мин</span>',
+     '   <span class="ok">✓</span> установка пакета          <span class="dim">из кэша · 5 мин</span>',
+     '   <span class="ok">✓</span> фоновые миграции          <span class="dim">88 → 0 · 30 мин</span>',
+     ' <span class="dim">16:19:55</span>  <span class="ok">шаг 2/6 готово за 00:41:07</span>', '',
+     ' <span class="dim">16:19:56</span>  <span class="b">шаг 3/6</span>  <span class="dim">16.11.10-ee</span>'
+    ].forEach(t => row(t));
 
-    const S = { step: 4, danger: false, remaining: 52, phase: '', phaseLabel: '' };
+    const S = { step: 4, danger: false, remaining: 52, phase: '', phaseLabel: '', open: false };
     const emit = html => { row(html); feed.scrollTop = feed.scrollHeight; };
 
     const paintPin = () => {
@@ -292,17 +337,26 @@ function buildStream(mode, skip){
         ? '<span class="crit">Ctrl-C опасен · dpkg</span>'
         : '<span class="ok">Ctrl-C безопасен</span>';
       const mid = S.phase === 'mig' ? 'миграции ' + S.remaining : S.phaseLabel;
-      if (mode === 'line'){
-        /* всё состояние, включая путь, в одной закреплённой строке */
-        pin.innerHTML = ' ' + chainMini() + '  <span class="b">шаг 3/6</span>  <span class="dim">' +
-                        clock(OVERALL + S.step) + '  ' + mid + '  ·  </span>' + state;
-      } else {
-        pin.innerHTML = ' <span class="b">шаг 3/6</span> <span class="dim">· ' + clock(OVERALL + S.step) +
-                        ' · ' + mid + ' · </span>' + state;
-      }
+      const left = ' <span class="b">шаг 3/6</span> <span class="dim">· ' + clock(OVERALL + S.step) +
+                   ' · ' + mid + ' · </span>' + state;
+      pin.innerHTML = pad(left, W - 9) + '<span class="dim">[p] путь</span>';
     };
+
+    /* доп. экран пути: перерисовывается, пока открыт */
+    const paintPath = () => {
+      if (!S.open) return;
+      sink = vPath; vPath.innerHTML = '';
+      row(pad(' <span class="b">Путь апгрейда</span>', W - 22) +
+          '<span class="dim">[p] вернуться в ленту</span>');
+      row(' <span class="dim">15.11.13-ee → 17.11.6-ee · шаг 3 из 6 · прошло ' +
+          clock(OVERALL + S.step) + '</span>');
+      row();
+      TIMELINES[kind](S).forEach(t => row(t));
+      sink = feed;
+    };
+
     paintPin();
-    every(1000, () => { S.step++; paintPin(); });
+    every(1000, () => { S.step++; paintPin(); paintPath(); });
 
     let live = null;
     play(skip, {
@@ -341,14 +395,21 @@ function buildStream(mode, skip){
           mig.innerHTML = '   ' + spin() + ' ' + pad('фоновые миграции', 26) +
             '<span class="dim">осталось </span><span class="b">' + S.remaining + '</span>' +
             '<span class="dim"> · −8 за 10 мин</span>';
-          paintPin();
+          paintPin(); paintPath();
         });
       }
     });
 
     api = {
-      jump: () => buildStream(mode, 3700),
+      jump: () => buildApp(kind, 3700),
+      path(){
+        S.open = !S.open;
+        vPath.hidden = !S.open;
+        vFeed.hidden = S.open;
+        if (S.open) paintPath();
+      },
       interrupt(){
+        if (S.open) api.path();            /* Ctrl-C всегда возвращает к ленте */
         if (!S.danger){
           clearTimers();
           emit(' <span class="dim">^C</span>');
@@ -371,12 +432,12 @@ function buildStream(mode, skip){
   return '';
 }
 
-const variantHeader    = () => buildStream('header');
-const variantLine      = () => buildStream('line');
-const variantMilestone = () => buildStream('milestone');
+const variantBranch = () => buildApp('branch');
+const variantTable  = () => buildApp('table');
+const variantScale  = () => buildApp('scale');
 
 /* ═══════════ пикер ═══════════ */
-const variants = [variantHeader, variantLine, variantMilestone];
+const variants = [variantBranch, variantTable, variantScale];
 
 const picker = document.querySelector('.proto-picker');
 const highlight = picker.querySelector('.proto-picker-highlight');
@@ -424,6 +485,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'r' || e.key === 'R') mount(current);
   else if (e.key === 'c' || e.key === 'C') api.interrupt();
   else if (e.key === 'j' || e.key === 'J') api.jump();
+  else if (e.key === 'p' || e.key === 'P') api.path();
 });
 
 setActive((parseInt(new URLSearchParams(location.search).get('v'), 10) || 1) - 1);
