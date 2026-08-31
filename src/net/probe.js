@@ -1,6 +1,8 @@
 import net from 'node:net';
 import tls from 'node:tls';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openSocket, parseProxy, request } from '../core/http.js';
 import { errorDetail } from '../core/exec.js';
 import { NetError, NET, netMessage } from '../core/netError.js';
@@ -202,7 +204,41 @@ export async function probeProxy({
  * реально ставятся. Успешный HTTP-запрос ещё ничего не гарантирует: apt
  * ходит своим кодом и своим конфигом.
  */
+/** Отказ по подписи — не отказ сети: ключ чинят иначе, чем маршрут. */
+const UNSIGNED = /NO_PUBKEY|not signed|GPG error|не подписан/i;
+
+/**
+ * Настоящее обновление списков — во временный каталог, а не в системный.
+ *
+ * `apt-cache madison` читает уже скачанные списки и о состоянии сети не
+ * говорит ничего: на боевой машине он отвечал «версий: 591», пока
+ * `apt-get update` через тот же прокси падал с «no longer has a Release
+ * file». Проба, которая этого не замечает, обещает больше, чем проверила.
+ *
+ * Свой Dir::State::Lists и свой sourcelist: системные списки не трогаем, чтобы
+ * диагностика оставалась диагностикой. Проверка подписи не отключается —
+ * отказ по ней просто получает свой диагноз.
+ */
+async function aptRefresh({ exec, confPath, listFile }) {
+  const dir = mkdtempSync(join(tmpdir(), 'gitlab-upgrade-lists-'));
+  mkdirSync(join(dir, 'partial'), { recursive: true });
+  try {
+    const r = await exec([
+      'apt-get', ...(confPath ? ['-c', confPath] : []), 'update',
+      '-o', `Dir::State::Lists=${dir}`,
+      '-o', `Dir::Etc::sourcelist=${listFile}`,
+      '-o', 'Dir::Etc::sourceparts=/dev/null',
+      '-o', 'Acquire::Languages=none',
+      '-o', 'APT::Get::List-Cleanup=0',
+    ], { readOnly: true, allowFailure: true, timeout: 120_000 });
+    return { code: r.code, said: `${r.stderr ?? ''}\n${r.stdout ?? ''}` };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function aptProbes({ add, exec, confPath, t, direct = false }) {
+  let listFile = null;
   try {
     // Самая частая причина «apt ничего не видит» — репозиторий GitLab просто
     // не подключён. Отличать это от сломанного прокси и есть тот час, ради
@@ -215,6 +251,7 @@ async function aptProbes({ add, exec, confPath, t, direct = false }) {
       add(fail('apt-no-repo'));
       return;
     }
+    listFile = src.stdout.trim().split('\n')[0];
   } catch { /* нет grep — идём дальше, madison всё равно ответит */ }
 
   try {
@@ -247,6 +284,26 @@ async function aptProbes({ add, exec, confPath, t, direct = false }) {
       : fail('apt-repo', { detail: errorDetail(r.stderr) || t('probe.aptSilent') }));
   } catch (err) {
     add(fail('apt-repo', { detail: err.message || t('probe.noDetail') }));
+  }
+
+  // Списки читаются — но читаются они с диска. Единственный способ узнать,
+  // доберётся ли apt до репозитория ЧЕРЕЗ ПРОКСИ, — сходить туда.
+  if (listFile) {
+    try {
+      const r = await aptRefresh({ exec, confPath, listFile });
+      if (r.code === 0) add(ok('apt-refresh', { host: GITLAB_REPO_HOST }));
+      else if (UNSIGNED.test(r.said)) {
+        // Ключ репозитория — отдельная беда: маршрут при этом рабочий.
+        add(fail('apt-unsigned', { detail: errorDetail(r.said) }));
+        return;
+      } else {
+        add(fail('apt-refresh', { detail: errorDetail(r.said) }));
+        return;
+      }
+    } catch (err) {
+      add(fail('apt-refresh', { detail: err.message }));
+      return;
+    }
   }
 
   if (direct) return;

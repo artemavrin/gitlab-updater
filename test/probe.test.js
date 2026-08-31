@@ -380,11 +380,11 @@ test('скачанные списки без gitlab-ee — другой диаг
     },
   });
   const steps = await probeProxy({ proxyUrl: null, t, exec });
-  const last = steps[steps.length - 1];
-  assert.equal(last.id, 'apt-repo');
+  const found = at(steps, 'apt-repo');
+  assert.equal(found.level, LEVEL.CRITICAL);
   // «причина не названа» — признание бесполезности; здесь причина есть.
-  assert.notEqual(last.params.detail, t('probe.noDetail'));
-  assert.match(last.params.detail, /gitlab-ee/);
+  assert.notEqual(found.params.detail, t('probe.noDetail'));
+  assert.match(found.params.detail, /gitlab-ee/);
 });
 
 /**
@@ -429,4 +429,64 @@ test('конфиг apt проксирует и репозиторий, и хос
   // Глобальный прокси по-прежнему только по явной просьбе: внутреннее зеркало
   // Ubuntu через него сломалось бы.
   assert.ok(!/Acquire::http::Proxy "/.test(conf));
+});
+
+const REFRESH = (conf) => [
+  'apt-get', ...(conf ? ['-c', conf] : []), 'update',
+  '-o', 'Dir::State::Lists=', '-o', 'Dir::Etc::sourcelist=/etc/apt/sources.list.d/gitlab_gitlab-ee.list',
+].join(' ');
+
+/**
+ * Настоящая машина: proxy test был весь зелёный — включая «apt через прокси,
+ * версий: 591», — а `apt-get update` через тот же прокси падал с «no longer
+ * has a Release file». Противоречия нет: madison читает списки с диска и о
+ * сети не говорит ничего. Проба обещала больше, чем проверила.
+ */
+function refreshBed(refresh) {
+  const seen = [];
+  const exec = async (argv) => {
+    const k = argv.join(' ');
+    seen.push(k);
+    if (k.startsWith('grep -rl')) return { code: 0, stdout: '/etc/apt/sources.list.d/gitlab_gitlab-ee.list\n' };
+    if (k.startsWith('ls -1')) return { code: 0, stdout: 'packages.gitlab.com_gitlab_gitlab-ee_ubuntu_dists_focal_main_binary-amd64_Packages\n' };
+    if (k.startsWith('apt-cache')) return { code: 0, stdout: ' gitlab-ee | 17.11.7-ee.0 | x\n' };
+    if (k.includes('Dir::State::Lists')) return refresh;
+    return { code: 1, stdout: '', stderr: '' };
+  };
+  return { exec, seen };
+}
+
+test('списки обновляются по-настоящему, а не читаются с диска', async () => {
+  const { exec, seen } = refreshBed({ code: 0, stdout: 'Reading package lists... Done', stderr: '' });
+  const steps = await probeProxy({ proxyUrl: null, t, exec });
+  assert.equal(at(steps, 'apt-refresh')?.level, LEVEL.OK);
+  // Во временный каталог, а не в системный: диагностика не трогает систему.
+  const cmd = seen.find((c) => c.includes('Dir::State::Lists='));
+  assert.ok(cmd && !/Dir::State::Lists=\s*$/.test(cmd), cmd);
+  assert.match(cmd, /Dir::Etc::sourceparts=\/dev\/null/);
+});
+
+test('падение обновления замечается, даже когда madison доволен', async () => {
+  const { exec } = refreshBed({
+    code: 100, stdout: '',
+    stderr: "E: The repository 'https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu/focal focal Release' no longer has a Release file.\n",
+  });
+  const steps = await probeProxy({ proxyUrl: null, t, exec });
+  // madison по-прежнему доволен — и именно поэтому одного его мало.
+  assert.equal(at(steps, 'apt-repo')?.level, LEVEL.OK);
+  const refresh = at(steps, 'apt-refresh');
+  assert.equal(refresh.level, LEVEL.CRITICAL);
+  assert.match(refresh.params.detail, /no longer has a Release file/);
+});
+
+test('отказ по подписи — не отказ маршрута, и диагноз у него свой', async () => {
+  // Ключ репозитория чинят иначе, чем сеть: смешать их значит отправить
+  // человека настраивать прокси, который работает.
+  const { exec } = refreshBed({
+    code: 100, stdout: '',
+    stderr: 'W: GPG error: … NO_PUBKEY 3F01618A51312F3F\nE: The repository … is not signed.\n',
+  });
+  const steps = await probeProxy({ proxyUrl: null, t, exec });
+  assert.equal(at(steps, 'apt-refresh'), null, 'это не отказ обновления');
+  assert.equal(at(steps, 'apt-unsigned')?.level, LEVEL.CRITICAL);
 });

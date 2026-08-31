@@ -91,6 +91,9 @@ export const REMEDIES = {
   'proxy-none.warn': flag('set-proxy', '--proxy'),
   'proxy-tls-intercepted.critical': flag('proxy-ca', '--proxy-ca'),
   'apt-repo.critical': run('apt-update', ['apt-get', 'update']),
+  'apt-refresh.critical': run('apt-update', ['apt-get', 'update']),
+  // Ключ репозитория ставится отдельно, и это не про сеть.
+  'apt-unsigned.critical': read('add-repo', DOCS.install),
   // Единственная починка, которая здесь работает: списки надо скачать.
   'apt-not-updated.critical': run('apt-update', ['apt-get', 'update']),
   'apt-no-repo.critical': read('add-repo', DOCS.install),

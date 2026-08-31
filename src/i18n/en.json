@@ -504,5 +504,10 @@
   "event.apt.locked": "apt is busy with another process, waiting: attempt {attempt} of {of}",
   "check.proxy-downloads.title": "download host",
   "check.proxy-downloads.ok": "{host} is reachable through the proxy — the packages themselves come from there",
-  "check.proxy-downloads.critical": "{host} is unreachable through the proxy: indexes will refresh but packages come from there, so the first install will stall"
+  "check.proxy-downloads.critical": "{host} is unreachable through the proxy: indexes will refresh but packages come from there, so the first install will stall",
+  "check.apt-refresh.title": "list refresh",
+  "check.apt-refresh.ok": "apt-get update works through the proxy: {host} answers",
+  "check.apt-refresh.critical": "apt-get update does not work through the proxy: {detail}",
+  "check.apt-unsigned.title": "repository signature",
+  "check.apt-unsigned.critical": "the route works, but the signature cannot be verified: {detail}"
 }

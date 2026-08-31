@@ -505,5 +505,10 @@
   "event.apt.locked": "apt занят другим процессом, жду: попытка {attempt} из {of}",
   "check.proxy-downloads.title": "хост загрузок",
   "check.proxy-downloads.ok": "{host} доступен через прокси — оттуда приходят сами пакеты",
-  "check.proxy-downloads.critical": "{host} через прокси недоступен: индексы читаются, а пакеты качаются оттуда — установка встанет на первом же шаге"
+  "check.proxy-downloads.critical": "{host} через прокси недоступен: индексы читаются, а пакеты качаются оттуда — установка встанет на первом же шаге",
+  "check.apt-refresh.title": "обновление списков",
+  "check.apt-refresh.ok": "apt-get update через прокси проходит: {host} отвечает",
+  "check.apt-refresh.critical": "apt-get update через прокси не проходит: {detail}",
+  "check.apt-unsigned.title": "подпись репозитория",
+  "check.apt-unsigned.critical": "маршрут рабочий, но подпись не проверяется: {detail}"
 }
