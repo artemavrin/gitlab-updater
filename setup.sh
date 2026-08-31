@@ -198,9 +198,11 @@ choose_node() {
   err "нужен Node >= $MIN_NODE, а самый новый из найденных — $(
         [ -n "$best" ] && "$best" --version 2>/dev/null || echo 'ни одного')"
   [ -n "$env_node" ] && err "в PATH: $env_node ($("$env_node" --version 2>/dev/null))"
-  err "поставьте Node и повторите; можно без apt:"
-  err "  curl -fsSLO https://nodejs.org/dist/v20.19.5/node-v20.19.5-linux-x64.tar.xz"
-  err "  sudo tar -xJf node-v20.19.5-linux-x64.tar.xz -C /usr/local --strip-components=1"
+  # Ссылка на каталог, а не на версию: конкретный номер в этом сообщении
+  # протухнет раньше, чем кто-нибудь его прочитает.
+  err "поставьте Node и повторите; можно без apt, одним архивом:"
+  err "  https://nodejs.org/dist/latest-v20.x/ — файл node-v20.*-linux-x64.tar.xz"
+  err "  sudo tar -xJf node-v20.*-linux-x64.tar.xz -C /usr/local --strip-components=1"
   err "или укажите готовый: setup.sh --node /путь/к/node"
   exit 1
 }
@@ -216,8 +218,8 @@ warn_user_owned_node() {
   err "внимание: $NODE принадлежит не root (uid $owner)"
   err "  root будет запускать этот файл — кто может его переписать, получит root"
   err "  надёжнее поставить Node системно и переустановить:"
-  err "    curl -fsSLO https://nodejs.org/dist/v20.19.5/node-v20.19.5-linux-x64.tar.xz"
-  err "    sudo tar -xJf node-v20.19.5-linux-x64.tar.xz -C /usr/local --strip-components=1"
+  err "    https://nodejs.org/dist/latest-v20.x/ — файл node-v20.*-linux-x64.tar.xz"
+  err "    sudo tar -xJf node-v20.*-linux-x64.tar.xz -C /usr/local --strip-components=1"
   return 0
 }
 
