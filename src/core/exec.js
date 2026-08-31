@@ -104,3 +104,20 @@ export function createExec({ mode = MODE.REAL, fixtures = null, bus = null, secr
     });
   };
 }
+
+/**
+ * Строка из stderr, по которой можно понять, что случилось.
+ *
+ * Раньше брали последнюю строку — и на ошибке Ruby оставалось
+ * «Did you mean? queue_order», без той строки, где назван сломанный метод.
+ * Сообщение уезжает в тикет вместо диагноза, и разбор начинается с нуля.
+ *
+ * Ruby печатает саму ошибку первой, поэтому ищем её, а не край вывода.
+ */
+export function errorDetail(stderr, limit = 200) {
+  const lines = String(stderr ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return '';
+  const named = lines.find((l) => /undefined method|NoMethodError|Error|no such|not found|cannot|denied/i.test(l));
+  const line = named ?? lines[lines.length - 1];
+  return line.length > limit ? `${line.slice(0, limit - 1)}…` : line;
+}

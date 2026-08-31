@@ -1,3 +1,4 @@
+import { MIGRATION_QUERY } from '../../src/steps/settle.js';
 /** Записанные выводы реальных команд. Ключ фикстуры — сама команда. */
 export const madison1711 = `
    gitlab-ee | 17.11.6-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
@@ -64,7 +65,10 @@ export const dfOutput = `Filesystem       1B-blocks          Avail Mounted on
 
 /** Здоровый инстанс: все проверки готовности проходят. */
 export function checkFixtures({ migrations = '0 0', pg = 'psql (PostgreSQL) 15.6', status = ctlStatusHealthy, df = dfOutput, extra = {} } = {}) {
-  const RUNNER = 'm = Gitlab::Database::BackgroundMigration::BatchedMigration; puts "#{m.queued.count} #{m.failed.count}"';
+  // Ключ — сам MIGRATION_QUERY, а не его копия. Копия и спрятала дефект:
+  // фикстура отвечала на сломанный запрос, поэтому тесты были зелёными, пока
+  // на настоящем сервере запрос падал с NoMethodError на любой версии.
+  const RUNNER = MIGRATION_QUERY;
   return {
     'test -d /opt/gitlab/embedded': { code: 0, stdout: '' },
     'test -f /.dockerenv': { code: 1, stdout: '' },

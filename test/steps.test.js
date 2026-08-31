@@ -182,3 +182,34 @@ test('темп считается по окну, а не по всей исто�
   assert.equal(etaMinutes(50, { closed: 0, windowMs: 600_000 }), null, 'нулевой темп не даёт оценки');
   assert.equal(rateOf([{ at: 0, queued: 1 }]), null);
 });
+
+/**
+ * Запрос о миграциях сверен с исходниками GitLab, а не написан по памяти.
+ *
+ * `scope :failed` в модели BatchedMigration не существует ни в одной версии с
+ * 14.10 по 19.1 — есть только состояние `state :failed, value: 4`, а сам
+ * GitLab пишет `with_status(:failed)`. Пока здесь стоял `m.failed`, запрос
+ * падал с NoMethodError на любой версии: `doctor` всегда говорил «состояние
+ * определить не удалось», а `run` после каждого шага 72 часа опрашивал
+ * сломанный запрос вместо ожидания миграций.
+ *
+ * Источник: lib/gitlab/database/background_migration/batched_migration.rb.
+ */
+test('запрос о миграциях не вызывает scope, которого в GitLab нет', () => {
+  assert.match(MIGRATION_QUERY, /with_status\(:failed\)/);
+  assert.ok(!/\bm\.failed\b/.test(MIGRATION_QUERY), 'scope :failed не существует ни в одной версии');
+  // `queued` — настоящий scope (with_statuses(:active, :paused)), он есть везде.
+  assert.match(MIGRATION_QUERY, /m\.queued\.count/);
+});
+
+test('упавшие миграции останавливают ожидание, а не молчат', async () => {
+  // Ровно то, что было сломано: ответ с непустым числом упавших обязан
+  // прервать апгрейд, а не пройти незамеченным.
+  const exec = createExec({ mode: MODE.REPLAY, fixtures: {
+    [`gitlab-rails runner -e production ${MIGRATION_QUERY}`]: { code: 0, stdout: '3 2' },
+  } });
+  await assert.rejects(
+    () => waitMigrations({ exec, timeoutMs: 60_000, intervalMs: 1, wait: async () => {} }),
+    (e) => e.name === 'MigrationsFailed' && e.count === 2,
+  );
+});

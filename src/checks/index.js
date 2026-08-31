@@ -4,6 +4,8 @@ import { freeBytes, toGb, GB } from '../detect/disk.js';
 import { postgresRange, osCeiling, comparePg, pgMajor } from '../plan/matrices.js';
 import { parseVersion, compareVersions, withinCeiling } from '../plan/version.js';
 import { remedyFor } from './remedies.js';
+import { MIGRATION_QUERY } from '../steps/settle.js';
+import { errorDetail } from '../core/exec.js';
 
 /**
  * Проверки — данные, а не разбросанные if'ы.
@@ -67,14 +69,12 @@ export const CHECKS = [
     id: 'migrations',
     depth: DEPTH.FAST,
     async run({ exec }) {
-      // Через gitlab-rails runner, а не запросом к таблице: числовые значения
-      // enum'а status менялись между версиями, а имена scope'ов — нет.
-      const script = 'm = Gitlab::Database::BackgroundMigration::BatchedMigration; ' +
-        'puts "#{m.queued.count} #{m.failed.count}"';
-      const r = await exec(['gitlab-rails', 'runner', '-e', 'production', script], {
+      // Ровно тот же запрос, что у `run`: две копии строки — это два разных
+      // ответа на один вопрос, и расходиться они начнут молча.
+      const r = await exec(['gitlab-rails', 'runner', '-e', 'production', MIGRATION_QUERY], {
         readOnly: true, allowFailure: true, timeout: 180_000,
       });
-      if (r.code !== 0) return warn('migrations-unknown', { detail: (r.stderr || '').trim().split('\n').pop() ?? '' });
+      if (r.code !== 0) return warn('migrations-unknown', { detail: errorDetail(r.stderr) });
       const [queued, failed] = r.stdout.trim().split(/\s+/).map(Number);
       if (!Number.isFinite(queued) || !Number.isFinite(failed)) return warn('migrations-unknown', { detail: r.stdout.trim() });
       // Упавшая миграция — стоп без вариантов: следующий шаг будет мигрировать

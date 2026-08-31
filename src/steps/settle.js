@@ -1,7 +1,26 @@
 import { parseCtlStatus, missingKeyServices } from '../detect/services.js';
+import { errorDetail } from '../core/exec.js';
 
+/**
+ * Число незавершённых и упавших фоновых миграций.
+ *
+ * `queued` — настоящий scope (`with_statuses(:active, :paused)`), он есть во
+ * всех версиях с 14.10 по 19.1. А вот `failed` scope'ом не был никогда: сам
+ * GitLab пишет `with_status(:failed)`, и в модели есть только состояние
+ * `state :failed, value: 4`. Пока здесь стоял `m.failed`, запрос падал с
+ * NoMethodError на любой версии GitLab — проверка миграций не работала вообще
+ * никогда, а `run` после каждого шага 72 часа опрашивал сломанный запрос
+ * вместо того, чтобы дождаться миграций или остановиться на упавших.
+ *
+ * Через runner, а не запросом к таблице: числовые значения состояний между
+ * версиями менялись, а имена — нет.
+ *
+ * Источник: lib/gitlab/database/background_migration/batched_migration.rb,
+ * сверено по тегам v14.10.5-ee … v19.1.7-ee.
+ */
 export const MIGRATION_QUERY =
-  'm = Gitlab::Database::BackgroundMigration::BatchedMigration; puts "#{m.queued.count} #{m.failed.count}"';
+  'm = Gitlab::Database::BackgroundMigration::BatchedMigration; '
+  + 'puts "#{m.queued.count} #{m.with_status(:failed).count}"';
 
 export class MigrationsFailed extends Error {
   constructor(count) {
@@ -57,7 +76,7 @@ export async function waitMigrations({
     });
     if (r.code !== 0) {
       // Неизвестно — не значит «в порядке»: сообщаем и пробуем снова.
-      bus?.emit({ t: 'migrations:unknown', detail: (r.stderr || '').trim().split('\n').pop() ?? '' });
+      bus?.emit({ t: 'migrations:unknown', detail: errorDetail(r.stderr) });
       await wait(intervalMs);
       continue;
     }
