@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createExec, MODE } from '../src/core/exec.js';
 import { skipList, backupArgv, runBackup, COMPONENTS, MODE as BACKUP, CONFIG_FILES, DEFAULT_DUMP_DIR, parseArchive } from '../src/steps/backup.js';
 import { installArgv, downloadArgv, holdArgv, unholdArgv } from '../src/steps/install.js';
-import { waitServices, waitMigrations, MigrationsFailed, rateOf, etaMinutes, MIGRATION_QUERY } from '../src/steps/settle.js';
+import { waitServices, waitMigrations, MigrationsFailed, rateOf, etaMinutes, MIGRATION_QUERY, parseMigrationCounts } from '../src/steps/settle.js';
 import { ctlStatusHealthy, ctlStatusDegraded } from './fixtures/index.js';
 
 /**
@@ -125,7 +125,7 @@ test('сервисы не поднялись за отведённое врем�
 });
 
 test('ожидание миграций завершается на нуле', async () => {
-  const queue = ['9 0', '4 0', '0 0'];
+  const queue = ['9 0 batched', '4 0 batched', '0 0 batched'];
   let i = 0;
   const exec = async (argv) => {
     assert.equal(argv.join(' '), `gitlab-rails runner -e production ${MIGRATION_QUERY}`);
@@ -141,13 +141,13 @@ test('ожидание миграций завершается на нуле', a
  */
 test('упавшая миграция прекращает ожидание немедленно', async () => {
   let calls = 0;
-  const exec = async () => { calls++; return { code: 0, stdout: '5 1' }; };
+  const exec = async () => { calls++; return { code: 0, stdout: '5 1 batched' }; };
   await assert.rejects(() => waitMigrations({ exec, intervalMs: 60_000, ...clock() }), MigrationsFailed);
   assert.equal(calls, 1, 'не должны продолжать опрашивать после падения');
 });
 
 test('неизвестное состояние миграций не считается нулём', async () => {
-  const outs = [{ code: 1, stdout: '', stderr: 'boom' }, { code: 0, stdout: 'мусор' }, { code: 0, stdout: '0 0' }];
+  const outs = [{ code: 1, stdout: '', stderr: 'boom' }, { code: 0, stdout: 'мусор' }, { code: 0, stdout: '0 0 batched' }];
   let i = 0;
   const seen = [];
   const bus = { emit: (e) => seen.push(e.t) };
@@ -158,7 +158,7 @@ test('неизвестное состояние миграций не счита
 });
 
 test('миграции не заканчиваются — выходим по таймауту, а не висим вечно', async () => {
-  const exec = async () => ({ code: 0, stdout: '5 0' });
+  const exec = async () => ({ code: 0, stdout: '5 0 batched' });
   const r = await waitMigrations({ exec, timeoutMs: 5 * 60_000, intervalMs: 60_000, ...clock() });
   assert.equal(r.ok, false);
   assert.equal(r.timedOut, true);
@@ -169,7 +169,7 @@ test('замершие часы не превращают ожидание в в
   const frozen = { now: () => 0, wait: async () => {} };
   const services = await waitServices({ exec: async () => ({ code: 0, stdout: ctlStatusDegraded }), timeoutMs: 10_000, intervalMs: 1_000, ...frozen });
   assert.equal(services.ok, false);
-  const migrations = await waitMigrations({ exec: async () => ({ code: 0, stdout: '5 0' }), timeoutMs: 10_000, intervalMs: 1_000, ...frozen });
+  const migrations = await waitMigrations({ exec: async () => ({ code: 0, stdout: '5 0 batched' }), timeoutMs: 10_000, intervalMs: 1_000, ...frozen });
   assert.equal(migrations.ok, false);
 });
 
@@ -206,10 +206,41 @@ test('упавшие миграции останавливают ожидани�
   // Ровно то, что было сломано: ответ с непустым числом упавших обязан
   // прервать апгрейд, а не пройти незамеченным.
   const exec = createExec({ mode: MODE.REPLAY, fixtures: {
-    [`gitlab-rails runner -e production ${MIGRATION_QUERY}`]: { code: 0, stdout: '3 2' },
+    [`gitlab-rails runner -e production ${MIGRATION_QUERY}`]: { code: 0, stdout: '3 2 batched' },
   } });
   await assert.rejects(
     () => waitMigrations({ exec, timeoutMs: 60_000, intervalMs: 1, wait: async () => {} }),
     (e) => e.name === 'MigrationsFailed' && e.count === 2,
   );
+});
+
+/**
+ * Разбор ответа. «В порядке» по непонятному выводу — худший из возможных
+ * ответов в этом месте: он разрешает ставить пакет поверх незавершённых
+ * миграций.
+ */
+test('ответу о миграциях верим только когда механизм назван', () => {
+  assert.deepEqual(parseMigrationCounts('5 1 batched,legacy'), { queued: 5, failed: 1, sources: 'batched,legacy' });
+  // 13.0–13.10: класса BatchedMigration ещё нет, считается только очередь.
+  assert.deepEqual(parseMigrationCounts('4 0 legacy'), { queued: 4, failed: 0, sources: 'legacy' });
+  // Ни один механизм не нашёлся — значит спросили не то, а не «миграций нет».
+  assert.equal(parseMigrationCounts('0 0 none'), null);
+  // Старый двухпольный ответ тоже не проходит: он мог прийти только от
+  // запроса, которого больше нет.
+  assert.equal(parseMigrationCounts('0 0'), null);
+  assert.equal(parseMigrationCounts('мусор'), null);
+  assert.equal(parseMigrationCounts(''), null);
+});
+
+test('запрос о миграциях работает и там, где BatchedMigration ещё нет', () => {
+  // Инструмент обещает подъём с 13.x, а класс появился только в 13.11: на
+  // 13.0–13.10 обращение к нему даёт NameError, и проверка не работала вовсе.
+  // Старые миграции там живут в очереди Sidekiq, и с 13.x подниматься, не
+  // дождавшись их, нельзя.
+  assert.match(MIGRATION_QUERY, /rescue NameError/);
+  assert.match(MIGRATION_QUERY, /Gitlab::BackgroundMigration/);
+  assert.match(MIGRATION_QUERY, /respond_to\?\(:remaining\)/);
+  // NoMethodError наследуется от NameError: без этой строки сломанный вызов
+  // стал бы тихим «0 0», то есть «миграций нет».
+  assert.match(MIGRATION_QUERY, /raise if e\.is_a\?\(NoMethodError\)/);
 });

@@ -64,7 +64,7 @@ export const dfOutput = `Filesystem       1B-blocks          Avail Mounted on
 `;
 
 /** Здоровый инстанс: все проверки готовности проходят. */
-export function checkFixtures({ migrations = '0 0', pg = 'psql (PostgreSQL) 15.6', status = ctlStatusHealthy, df = dfOutput, extra = {} } = {}) {
+export function checkFixtures({ migrations = '0 0 batched', pg = 'psql (PostgreSQL) 15.6', status = ctlStatusHealthy, df = dfOutput, extra = {} } = {}) {
   // Ключ — сам MIGRATION_QUERY, а не его копия. Копия и спрятала дефект:
   // фикстура отвечала на сломанный запрос, поэтому тесты были зелёными, пока
   // на настоящем сервере запрос падал с NoMethodError на любой версии.

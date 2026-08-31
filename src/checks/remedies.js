@@ -106,6 +106,8 @@ export const NO_REMEDY = new Set([
   'proxy-handshake.critical',
   'proxy-connect.critical',
   'proxy-tls.critical',
+  'proxy-tls-closed.critical',   // закрыли рукопожатие — команды на это нет
+  'proxy-tls-filtered.critical', // адрес закрыт в сети, лечится не здесь
   'proxy-http.critical',
 ]);
 

@@ -2,25 +2,56 @@ import { parseCtlStatus, missingKeyServices } from '../detect/services.js';
 import { errorDetail } from '../core/exec.js';
 
 /**
- * Число незавершённых и упавших фоновых миграций.
+ * Число незавершённых и упавших фоновых миграций — на любой версии GitLab.
  *
- * `queued` — настоящий scope (`with_statuses(:active, :paused)`), он есть во
- * всех версиях с 14.10 по 19.1. А вот `failed` scope'ом не был никогда: сам
- * GitLab пишет `with_status(:failed)`, и в модели есть только состояние
- * `state :failed, value: 4`. Пока здесь стоял `m.failed`, запрос падал с
- * NoMethodError на любой версии GitLab — проверка миграций не работала вообще
- * никогда, а `run` после каждого шага 72 часа опрашивал сломанный запрос
- * вместо того, чтобы дождаться миграций или остановиться на упавших.
+ * Механизмов два, и в разных версиях доступны разные:
  *
- * Через runner, а не запросом к таблице: числовые значения состояний между
- * версиями менялись, а имена — нет.
+ * * `BatchedMigration` — появился в 13.11. Ниже него класса нет вовсе, и
+ *   обращение к нему даёт NameError: на 13.0–13.10 проверка просто не могла
+ *   работать. `queued` — настоящий scope (`with_statuses(:active, :paused)`),
+ *   есть во всех версиях. А `failed` scope'ом не был никогда: сам GitLab
+ *   пишет `with_status(:failed)`, в модели есть только `state :failed`.
+ * * `Gitlab::BackgroundMigration.remaining` — старые миграции в очереди
+ *   Sidekiq. Есть с 13.0 по 17.11, в 19.x файла уже нет. С 13.x подниматься,
+ *   не дождавшись их, нельзя — а до сих пор мы их не считали совсем.
  *
- * Источник: lib/gitlab/database/background_migration/batched_migration.rb,
- * сверено по тегам v14.10.5-ee … v19.1.7-ee.
+ * Отсутствующий класс пропускаем, отсутствующий метод — нет. NoMethodError
+ * наследуется от NameError, и `rescue NameError` проглотил бы ровно ту ошибку,
+ * из-за которой этот запрос был сломан: сломанный вызов стал бы тихим «0 0»,
+ * то есть «миграций нет». Поэтому NoMethodError поднимается дальше.
+ *
+ * Третье поле — какие механизмы нашлись. `none` означает «мы спросили не то»,
+ * и это не то же самое, что «миграций нет».
+ *
+ * Источник: lib/gitlab/database/background_migration/batched_migration.rb и
+ * lib/gitlab/background_migration.rb, сверено по тегам v13.0.14-ee … v19.1.7-ee.
  */
-export const MIGRATION_QUERY =
-  'm = Gitlab::Database::BackgroundMigration::BatchedMigration; '
-  + 'puts "#{m.queued.count} #{m.with_status(:failed).count}"';
+export const MIGRATION_QUERY = [
+  'q = 0; f = 0; s = []',
+  'begin;'
+    + ' m = Gitlab::Database::BackgroundMigration::BatchedMigration;'
+    + ' q += m.queued.count; f += m.with_status(:failed).count; s << "batched";'
+    + ' rescue NameError => e; raise if e.is_a?(NoMethodError); end',
+  'begin;'
+    + ' g = Gitlab::BackgroundMigration;'
+    + ' if g.respond_to?(:remaining) then q += g.remaining; s << "legacy" end;'
+    + ' rescue NameError => e; raise if e.is_a?(NoMethodError); end',
+  'puts "#{q} #{f} #{s.empty? ? "none" : s.join(",")}"',
+].join('; ');
+
+/**
+ * Разбор ответа. Возвращает null там, где ответу верить нельзя: «в порядке»
+ * по непонятному выводу — худший из возможных ответов в этом месте.
+ */
+export function parseMigrationCounts(stdout) {
+  const parts = String(stdout ?? '').trim().split(/\s+/);
+  const queued = Number(parts[0]);
+  const failed = Number(parts[1]);
+  const sources = parts[2] ?? '';
+  if (!Number.isFinite(queued) || !Number.isFinite(failed)) return null;
+  if (!sources || sources === 'none') return null;
+  return { queued, failed, sources };
+}
 
 export class MigrationsFailed extends Error {
   constructor(count) {
@@ -80,12 +111,13 @@ export async function waitMigrations({
       await wait(intervalMs);
       continue;
     }
-    const [queued, failed] = r.stdout.trim().split(/\s+/).map(Number);
-    if (!Number.isFinite(queued) || !Number.isFinite(failed)) {
+    const counts = parseMigrationCounts(r.stdout);
+    if (!counts) {
       bus?.emit({ t: 'migrations:unknown', detail: r.stdout.trim() });
       await wait(intervalMs);
       continue;
     }
+    const { queued, failed } = counts;
     if (failed > 0) throw new MigrationsFailed(failed);
 
     history.push({ at: now(), queued });

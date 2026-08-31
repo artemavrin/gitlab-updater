@@ -1,8 +1,7 @@
 import net from 'node:net';
 import tls from 'node:tls';
 import { readFileSync } from 'node:fs';
-import { connectViaHttpProxy, parseProxy, request } from '../core/http.js';
-import { socksConnect } from '../core/socks5.js';
+import { openSocket, parseProxy, request } from '../core/http.js';
 import { NetError, NET, netMessage } from '../core/netError.js';
 import { GITLAB_REPO_HOST } from './aptProxy.js';
 import { LEVEL } from '../core/events.js';
@@ -47,10 +46,30 @@ function tcpProbe({ host, port, timeout }) {
  * Своя реализация в пробе разошлась бы с рабочей, и проверка перестала бы
  * проверять то, чем пользуются.
  */
-function tunnel({ proxy, host, port, timeout }) {
-  return proxy.kind === 'socks5'
-    ? socksConnect({ proxyHost: proxy.host, proxyPort: proxy.port, host, port, ...proxy, timeout })
-    : connectViaHttpProxy({ proxy, host, port, timeout });
+const tunnel = ({ proxy, host, port, timeout }) => openSocket({ proxy, host, port, timeout });
+
+/** Обрыв на рукопожатии, а не отказ по сертификату. */
+function closedDuringHandshake(err) {
+  return /socket disconnected before secure|ECONNRESET|EPIPE|socket hang up/i.test(
+    `${err?.message ?? ''} ${err?.code ?? ''}`);
+}
+
+/**
+ * Тот же туннель до контрольного хоста: отвечает ли TLS хоть кому-нибудь.
+ * Своё соединение и свой try — упасть эта проба права не имеет, она только
+ * уточняет диагноз.
+ */
+async function tlsWorks({ proxy, host, ca, timeout }) {
+  let socket = null;
+  try {
+    socket = await tunnel({ proxy, host, port: 443, timeout });
+    await tlsProbe(socket, { host, ca: readCa(ca), timeout });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    socket?.destroy();
+  }
 }
 
 function tlsProbe(socket, { host, ca, timeout }) {
@@ -129,8 +148,24 @@ export async function probeProxy({
     socket.destroy();
     // Самопроверяемый сертификат в цепочке — почти всегда перехват TLS на
     // прокси, и лечится он отдельным CA, а не отключением проверки.
-    const intercepted = /self.signed|unable to verify|UNABLE_TO_(GET|VERIFY)/i.test(err.message ?? '');
-    add(fail(intercepted ? 'proxy-tls-intercepted' : 'proxy-tls', { host, detail: why(err, t) }));
+    if (/self.signed|unable to verify|UNABLE_TO_(GET|VERIFY)/i.test(err.message ?? '')) {
+      add(fail('proxy-tls-intercepted', { host, detail: why(err, t) }));
+      return steps;
+    }
+    // Соединение закрыли посреди рукопожатия — это не про сертификат вообще.
+    // Так выглядит фильтрация по SNI: туннель до хоста открылся, а TLS к нему
+    // обрывают. Называть это «сертификат не принят» — отправлять человека
+    // искать CA там, где его нет.
+    if (closedDuringHandshake(err)) {
+      const control = await tlsWorks({ proxy, host: UBUNTU_HOST, ca, timeout });
+      // Контрольный хост отвечает — значит прокси жив, а рвётся именно этот
+      // адрес. Разница между «прокси не работает» и «хост закрыт» — это разные
+      // люди, к которым идти.
+      add(fail(control ? 'proxy-tls-filtered' : 'proxy-tls-closed',
+        { host, control: UBUNTU_HOST, detail: why(err, t) }));
+      return steps;
+    }
+    add(fail('proxy-tls', { host, detail: why(err, t) }));
     return steps;
   }
 

@@ -35,7 +35,7 @@ function bed({ version = '17.11.4-ee.0', extra = {}, flags = {} } = {}) {
     ...fixturesFor({ version }), ...checkFixtures(),
     'apt-get update': { code: 0, stdout: '' },
     'gitlab-ctl status': { code: 0, stdout: ctlStatusHealthy },
-    [RUNNER]: { code: 0, stdout: '0 0' },
+    [RUNNER]: { code: 0, stdout: '0 0 batched' },
     'apt-mark hold gitlab-ee': { code: 0, stdout: '' },
     ...extra,
   };
@@ -130,7 +130,7 @@ test('предупреждения останавливают, пока не с�
  * следующий шаг мигрировал бы поверх незавершённых данных.
  */
 test('упавшая миграция до старта не пускает к установке вовсе', async () => {
-  const { ctx, calls } = bed({ extra: { [RUNNER]: { code: 0, stdout: '0 1' } } });
+  const { ctx, calls } = bed({ extra: { [RUNNER]: { code: 0, stdout: '0 1 batched' } } });
   const r = await commandRun(ctx);
   assert.equal(r.errorCode, 'checks-failed');
   assert.ok(!calls.some((c) => c.startsWith('apt-get install')), 'установка началась поверх упавшей миграции');
@@ -138,7 +138,7 @@ test('упавшая миграция до старта не пускает к �
 
 test('упавшая во время шага миграция останавливает и оставляет состояние для resume', async () => {
   // Перед стартом чисто, падение случается уже после установки.
-  const { ctx, dir } = bed({ extra: { [RUNNER]: [{ code: 0, stdout: '0 0' }, { code: 0, stdout: '3 1' }] } });
+  const { ctx, dir } = bed({ extra: { [RUNNER]: [{ code: 0, stdout: '0 0 batched' }, { code: 0, stdout: '3 1 batched' }] } });
   const r = await commandRun(ctx);
   assert.equal(r.errorCode, 'migrations-failed');
   assert.match(r.lines.join('\n'), /ОСТАНОВЛЕНО/);
@@ -169,7 +169,7 @@ test('второй экземпляр не запускается поверх �
 });
 
 test('замок освобождается даже когда шаг упал', async () => {
-  const { ctx, dir } = bed({ extra: { [RUNNER]: [{ code: 0, stdout: '0 0' }, { code: 0, stdout: '0 2' }] } });
+  const { ctx, dir } = bed({ extra: { [RUNNER]: [{ code: 0, stdout: '0 0 batched' }, { code: 0, stdout: '0 2 batched' }] } });
   await commandRun(ctx);
   assert.equal(existsSync(join(dir, 'lock')), false, 'замок остался висеть после ошибки');
 });
@@ -292,7 +292,7 @@ test('resume после падения в середине установки п
 });
 
 test('resume не требует --force из-за миграций, ради которых его и запускают', async () => {
-  const { ctx, dir } = bed({ extra: { [RUNNER]: [{ code: 0, stdout: '4 0' }, { code: 0, stdout: '0 0' }] } });
+  const { ctx, dir } = bed({ extra: { [RUNNER]: [{ code: 0, stdout: '4 0 batched' }, { code: 0, stdout: '0 0 batched' }] } });
   saveState(dir, {
     pkg: 'gitlab-ee', edition: 'ee', expectedVersion: '17.11.4-ee.0',
     from: '17.11.4-ee.0', target: '17.11.6-ee.0', profile: 'patch',
@@ -377,7 +377,7 @@ test('--dry-run работает без --yes: он ничего не меняе
 test('--dry-run не ждёт миграции по-настоящему', async () => {
   // Ожидание readOnly, значит dry-режим exec его не пропустил бы: без явной
   // ветки предпросмотр честно ждал бы до 72 часов.
-  const { ctx, calls } = bed({ flags: { dryRun: true, yes: false }, extra: { [RUNNER]: { code: 0, stdout: '99 0' } } });
+  const { ctx, calls } = bed({ flags: { dryRun: true, yes: false }, extra: { [RUNNER]: { code: 0, stdout: '99 0 batched' } } });
   await commandRun(ctx);
   assert.ok(!calls.some((c) => c.startsWith('apt-mark hold')), 'закрепление в предпросмотре');
 });

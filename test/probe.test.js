@@ -2,7 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import tls from 'node:tls';
-import { probeProxy } from '../src/net/probe.js';
+import { probeProxy, UBUNTU_HOST } from '../src/net/probe.js';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { commandProxyTest } from '../src/commands/proxyTest.js';
 import { createExec, MODE } from '../src/core/exec.js';
 import { createTranslator, LOCALES } from '../src/i18n/index.js';
@@ -219,4 +223,117 @@ test('при неуспехе конверт несёт находки, а не 
   // Структура нужна агенту именно в этот момент, а не когда всё хорошо.
   assert.equal(envelope.result.findings.length, 1);
   assert.equal(envelope.error.code, 'proxy-unreachable');
+});
+
+/**
+ * Прокси, который открывает туннель и обрывает TLS.
+ *
+ * Так выглядит фильтрация по SNI, и это самый частый вид «прокси есть, а
+ * пакетов не видно». `serveTlsFor` — хост, которому этот прокси TLS всё-таки
+ * отдаёт: по нему и отличается «прокси сломан» от «закрыт этот адрес».
+ */
+function fakeSocksCuttingTls({ serveTlsFor = null, key = null, cert = null } = {}) {
+  const asked = [];
+  const server = net.createServer((sock) => {
+    let stage = 'greeting';
+    sock.on('data', (buf) => {
+      if (stage === 'greeting') { stage = 'connect'; return sock.write(Buffer.from([0x05, 0x00])); }
+      if (stage !== 'connect') return;
+      stage = 'tunnel';
+      // ATYP 0x03 — имя хоста: длина, затем имя. Именно по нему и фильтруют.
+      const host = buf[3] === 0x03 ? buf.subarray(5, 5 + buf[4]).toString() : '';
+      asked.push(host);
+      sock.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+      if (serveTlsFor && host === serveTlsFor) {
+        sock.removeAllListeners('data');
+        const secured = new tls.TLSSocket(sock, { isServer: true, key, cert });
+        secured.on('error', () => {});
+        return;
+      }
+      sock.destroy();
+    });
+    sock.on('error', () => {});
+  });
+  return { server, asked, listen: () => new Promise((r) => server.listen(0, '127.0.0.1', () => r(server.address().port))) };
+}
+
+/**
+ * Самая дорогая из найденных ошибок: в вызове socksConnect спред `...proxy`
+ * стоял после host и port и перезаписывал их адресом самого прокси. Туннель
+ * открывался к прокси, а диагностика писала «CONNECT packages.gitlab.com — ок».
+ * Человек на боевой машине читал зелёную строку про хост, к которому никто не
+ * ходил, и искал причину не там. Тот же вызов был в openSocket, то есть
+ * уведомления через SOCKS не уходили никуда.
+ */
+test('SOCKS-туннель открывается к цели, а не к самому прокси', async () => {
+  const proxy = fakeSocksCuttingTls();
+  const port = await proxy.listen();
+  try {
+    await probeProxy({ proxyUrl: `socks5h://127.0.0.1:${port}`, t, timeout: 2000 });
+    assert.ok(proxy.asked.length > 0, 'CONNECT вообще не дошёл');
+    assert.equal(proxy.asked[0], 'packages.gitlab.com');
+    assert.ok(!proxy.asked.includes('127.0.0.1'), `прокси просили сходить к себе: ${proxy.asked.join(', ')}`);
+  } finally {
+    await new Promise((r) => proxy.server.close(r));
+  }
+});
+
+test('обрыв рукопожатия не называется отказом по сертификату', async () => {
+  // Настоящий вывод с боевой машины: CONNECT прошёл, а TLS оборвали. Пока
+  // это называлось «сертификат не принят», человек шёл искать CA там, где
+  // его нет, — на закрытом контуре это дни.
+  const proxy = fakeSocksCuttingTls();
+  const port = await proxy.listen();
+  try {
+    const steps = await probeProxy({ proxyUrl: `socks5h://127.0.0.1:${port}`, t, timeout: 2000 });
+    assert.equal(at(steps, 'proxy-connect')?.level, LEVEL.OK, 'туннель обязан открыться');
+    const tlsStep = steps[steps.length - 1];
+    assert.equal(tlsStep.id, 'proxy-tls-closed');
+    assert.ok(!/сертификат/.test(t(`check.${tlsStep.id}.critical`, tlsStep.params)),
+      'про сертификат здесь речи нет');
+  } finally {
+    await new Promise((r) => proxy.server.close(r));
+  }
+});
+
+/**
+ * Сертификат делаем на месте: держать ключ в репозитории нельзя даже
+ * тестовый — однажды его найдут и решат, что он настоящий.
+ */
+function selfSignedFor(host) {
+  const dir = mkdtempSync(join(tmpdir(), 'probe-tls-'));
+  const key = join(dir, 'key.pem');
+  const cert = join(dir, 'cert.pem');
+  try {
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-keyout', key, '-out', cert,
+      '-days', '2', '-nodes', '-subj', `/CN=${host}`, '-addext', `subjectAltName=DNS:${host}`],
+    { stdio: 'pipe' });
+  } catch {
+    rmSync(dir, { recursive: true, force: true });
+    return null; // без openssl эту ветку не проверить
+  }
+  return { dir, key: readFileSync(key), cert: readFileSync(cert), caPath: cert };
+}
+
+test('«закрыт этот адрес» отличается от «прокси не работает»', async () => {
+  // Разница между этими двумя выводами — это разные люди, к которым идти:
+  // сетевой администратор про один адрес или владелец прокси про весь прокси.
+  const tlsCert = selfSignedFor(UBUNTU_HOST);
+  if (!tlsCert) return;
+  const proxy = fakeSocksCuttingTls({ serveTlsFor: UBUNTU_HOST, key: tlsCert.key, cert: tlsCert.cert });
+  const port = await proxy.listen();
+  try {
+    const steps = await probeProxy({
+      proxyUrl: `socks5h://127.0.0.1:${port}`, t, timeout: 2000, ca: tlsCert.caPath,
+    });
+    const tlsStep = steps[steps.length - 1];
+    assert.equal(tlsStep.id, 'proxy-tls-filtered');
+    // В сообщении обязан быть назван контрольный хост: без него это утверждение
+    // ничем не подкреплено.
+    assert.equal(tlsStep.params.control, UBUNTU_HOST);
+    assert.match(t(`check.${tlsStep.id}.critical`, tlsStep.params), /archive\.ubuntu\.com/);
+  } finally {
+    await new Promise((r) => proxy.server.close(r));
+    rmSync(tlsCert.dir, { recursive: true, force: true });
+  }
 });

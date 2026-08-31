@@ -4,7 +4,7 @@ import { freeBytes, toGb, GB } from '../detect/disk.js';
 import { postgresRange, osCeiling, comparePg, pgMajor } from '../plan/matrices.js';
 import { parseVersion, compareVersions, withinCeiling } from '../plan/version.js';
 import { remedyFor } from './remedies.js';
-import { MIGRATION_QUERY } from '../steps/settle.js';
+import { MIGRATION_QUERY, parseMigrationCounts } from '../steps/settle.js';
 import { errorDetail } from '../core/exec.js';
 
 /**
@@ -75,8 +75,9 @@ export const CHECKS = [
         readOnly: true, allowFailure: true, timeout: 180_000,
       });
       if (r.code !== 0) return warn('migrations-unknown', { detail: errorDetail(r.stderr) });
-      const [queued, failed] = r.stdout.trim().split(/\s+/).map(Number);
-      if (!Number.isFinite(queued) || !Number.isFinite(failed)) return warn('migrations-unknown', { detail: r.stdout.trim() });
+      const counts = parseMigrationCounts(r.stdout);
+      if (!counts) return warn('migrations-unknown', { detail: r.stdout.trim() });
+      const { queued, failed } = counts;
       // Упавшая миграция — стоп без вариантов: следующий шаг будет мигрировать
       // поверх незавершённых данных. Этот critical не снимается --force.
       if (failed > 0) return critical('migrations-failed', { n: failed });

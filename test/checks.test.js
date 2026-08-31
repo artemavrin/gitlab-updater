@@ -52,7 +52,7 @@ test('без root — критическая остановка', async () => {
 });
 
 test('упавшая миграция останавливает и не лечится --force', async () => {
-  const s = await runChecks(base({}, { [Object.keys(checkFixtures()).find((k) => k.startsWith('gitlab-rails'))]: { code: 0, stdout: '0 1' } }));
+  const s = await runChecks(base({}, { [Object.keys(checkFixtures()).find((k) => k.startsWith('gitlab-rails'))]: { code: 0, stdout: '0 1 batched' } }));
   const f = byId(s.findings, 'migrations-failed');
   assert.equal(f.level, LEVEL.CRITICAL);
   assert.equal(f.params.n, 1);
@@ -61,7 +61,7 @@ test('упавшая миграция останавливает и не леч�
 
 test('незавершённые миграции — предупреждение, а не остановка', async () => {
   const key = Object.keys(checkFixtures()).find((k) => k.startsWith('gitlab-rails'));
-  const s = await runChecks(base({}, { [key]: { code: 0, stdout: '7 0' } }));
+  const s = await runChecks(base({}, { [key]: { code: 0, stdout: '7 0 batched' } }));
   assert.equal(byId(s.findings, 'migrations-pending').level, LEVEL.WARN);
   assert.equal(blocked(s), false);
 });

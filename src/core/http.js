@@ -62,7 +62,16 @@ export function connectViaHttpProxy({ proxy, host, port, timeout }) {
   });
 }
 
-async function openSocket({ proxy, host, port, timeout }) {
+/**
+ * Соединение до host:port — напрямую или через прокси.
+ *
+ * Поля для socksConnect перечисляются поимённо. Раньше здесь стоял
+ * `{ ..., host, port, ...proxy }`, и спред в конце перезаписывал host и port
+ * адресом самого прокси: туннель открывался к прокси, а не к цели. Диагностика
+ * показывала «CONNECT packages.gitlab.com — ок», хотя ходила по кругу, а
+ * уведомления через SOCKS не уходили никуда.
+ */
+export async function openSocket({ proxy, host, port, timeout }) {
   if (!proxy) {
     return new Promise((resolve, reject) => {
       const s = net.connect({ host, port, timeout });
@@ -72,7 +81,11 @@ async function openSocket({ proxy, host, port, timeout }) {
     });
   }
   if (proxy.kind === 'socks5') {
-    return socksConnect({ proxyHost: proxy.host, proxyPort: proxy.port, host, port, ...proxy, timeout });
+    return socksConnect({
+      proxyHost: proxy.host, proxyPort: proxy.port,
+      username: proxy.username, password: proxy.password,
+      host, port, timeout,
+    });
   }
   return connectViaHttpProxy({ proxy, host, port, timeout });
 }
