@@ -29,6 +29,8 @@ const base = (over = {}, fixtures = {}) => ({
   uid: 0,
   env: {},
   isTty: false,
+  // Иначе результат зависел бы от того, запущены ли сами тесты в tmux.
+  inTmux: () => false,
   minFreeGb: 5,
   safeForOs: false,
   data,

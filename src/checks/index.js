@@ -1,5 +1,6 @@
 import { LEVEL } from '../core/events.js';
 import { detectServices, detectPostgres, missingKeyServices, parsePgVersion } from '../detect/services.js';
+import { inMultiplexer } from '../detect/session.js';
 import { freeBytes, toGb, GB } from '../detect/disk.js';
 import { postgresRange, osCeiling, comparePg, pgMajor } from '../plan/matrices.js';
 import { parseVersion, compareVersions, withinCeiling } from '../plan/version.js';
@@ -129,9 +130,11 @@ export const CHECKS = [
   {
     id: 'session',
     depth: DEPTH.FAST,
-    async run({ env, isTty, plan }) {
+    async run({ env, isTty, plan, inTmux = inMultiplexer }) {
       if (!isTty) return ok('session-detached');
-      if (env.TMUX || env.STY) return ok('session');
+      // Не только по окружению: sudo его сбрасывает, и предупреждение
+      // появлялось у тех, кто уже сделал ровно то, что оно советует.
+      if (inTmux({ env })) return ok('session');
       // Для патча на десять минут это шум; для длинного пути — реальный риск.
       if ((plan?.steps.length ?? 1) <= 1) return ok('session');
       return warn('session');
