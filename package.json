@@ -20,7 +20,8 @@
     "lint": "node scripts/lint.mjs",
     "build": "node scripts/build.mjs",
     "check": "npm run lint && npm test",
-    "shots": "FORCE_COLOR=3 node --import ./scripts/jsx-loader.mjs scripts/shots.jsx"
+    "shots": "FORCE_COLOR=3 node --import ./scripts/jsx-loader.mjs scripts/shots.jsx",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "ink": "^6.8.0",
