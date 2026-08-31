@@ -1,4 +1,5 @@
 import { MIGRATION_QUERY } from '../../src/steps/settle.js';
+import { APT_LOCKS } from '../../src/checks/index.js';
 /** Записанные выводы реальных команд. Ключ фикстуры — сама команда. */
 export const madison1711 = `
    gitlab-ee | 17.11.6-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
@@ -76,7 +77,9 @@ export function checkFixtures({ migrations = '0 0 batched', pg = 'psql (PostgreS
     'gitlab-ctl status': { code: 0, stdout: status },
     [`gitlab-rails runner -e production ${RUNNER}`]: { code: 0, stdout: migrations },
     'df -B1 --output=source,size,avail,target /var/opt/gitlab /': { code: 0, stdout: df },
-    'fuser /var/lib/dpkg/lock-frontend': { code: 1, stdout: '' },
+    // Ключи берём из самого списка блокировок: копия разошлась бы с ним молча,
+    // а проверка «apt свободен» — ровно та, что пропустила чужой apt-get update.
+    ...Object.fromEntries(APT_LOCKS.map((path) => [`fuser ${path}`, { code: 1, stdout: '' }])),
     'systemctl is-active apt-daily.timer': { code: 3, stdout: 'inactive' },
     'gitlab-psql --version': { code: 0, stdout: pg },
     // Встроенный PostgreSQL: строки postgresql['enable'] в gitlab.rb нет.

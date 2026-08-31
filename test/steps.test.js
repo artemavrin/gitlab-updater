@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createExec, MODE } from '../src/core/exec.js';
+import { createExec, MODE, ExecError } from '../src/core/exec.js';
 import { skipList, backupArgv, runBackup, COMPONENTS, MODE as BACKUP, CONFIG_FILES, DEFAULT_DUMP_DIR, parseArchive } from '../src/steps/backup.js';
-import { installArgv, downloadArgv, holdArgv, unholdArgv } from '../src/steps/install.js';
+import { installArgv, downloadArgv, holdArgv, unholdArgv, updateLists } from '../src/steps/install.js';
 import { waitServices, waitMigrations, MigrationsFailed, rateOf, etaMinutes, MIGRATION_QUERY, parseMigrationCounts } from '../src/steps/settle.js';
 import { ctlStatusHealthy, ctlStatusDegraded } from './fixtures/index.js';
 import { execFileSync } from 'node:child_process';
@@ -338,4 +338,63 @@ test('неизвестная смена API падает громко, а не �
     () => execFileSync('ruby', ['-e', `${stub}\n${MIGRATION_QUERY}`], { stdio: 'pipe' }),
     (e) => /NoMethodError/.test(String(e.stderr)),
   );
+});
+
+/**
+ * Чужой apt-get update валит наш кодом 100 на первом же действии подъёма.
+ *
+ * Воспроизведено на живом apt: два `apt-get update` одновременно дают
+ * «E: Could not get lock /var/lib/apt/lists/lock», код 100. Именно так умер
+ * настоящий девятнадцатишаговый подъём, не начавшись, — и проверка готовности
+ * этого не видела, потому что смотрела только dpkg-блокировку.
+ */
+const LOCK_ERROR = 'E: Could not get lock /var/lib/apt/lists/lock. It is held by process 11507 (apt-get)\n'
+  + 'E: Unable to lock directory /var/lib/apt/lists/\n';
+
+const lockedOnce = (times) => {
+  let left = times;
+  return async (argv) => {
+    if (!argv.join(' ').startsWith('apt-get update')) return { code: 0, stdout: '', stderr: '' };
+    if (left-- > 0) throw new ExecError('exec-failed', { code: 100, argv: argv.join(' '), stdout: '', stderr: LOCK_ERROR });
+    return { code: 0, stdout: 'Reading package lists... Done', stderr: '' };
+  };
+};
+
+test('на занятой блокировке apt ждём и повторяем, а не падаем', async () => {
+  const waited = [];
+  const events = [];
+  const r = await updateLists(lockedOnce(2), null, {
+    bus: { emit: (e) => events.push(e) },
+    waitMs: 1000,
+    wait: async (ms) => { waited.push(ms); },
+  });
+  assert.equal(r.code, 0);
+  assert.equal(waited.length, 2, 'два отказа — два ожидания');
+  // Молчаливая пауза неотличима от зависания.
+  assert.deepEqual(events.map((e) => e.t), ['apt:locked', 'apt:locked']);
+  assert.equal(events[0].attempt, 1);
+});
+
+test('настоящая ошибка apt не повторяется, а поднимается сразу', async () => {
+  // Повтор поверх «репозиторий не подписан» прячет причину и тратит время.
+  let calls = 0;
+  const gpg = async (argv) => {
+    calls++;
+    throw new ExecError('exec-failed', {
+      code: 100, argv: argv.join(' '), stdout: '',
+      stderr: "E: The repository 'https://packages.gitlab.com/… focal InRelease' is not signed.\n",
+    });
+  };
+  await assert.rejects(() => updateLists(gpg, null, { waitMs: 1, wait: async () => {} }));
+  assert.equal(calls, 1, 'повторять здесь нечего');
+});
+
+test('бесконечно ждать не станем: у ожидания есть предел', async () => {
+  let calls = 0;
+  const always = async (argv) => {
+    calls++;
+    throw new ExecError('exec-failed', { code: 100, argv: argv.join(' '), stdout: '', stderr: LOCK_ERROR });
+  };
+  await assert.rejects(() => updateLists(always, null, { attempts: 3, waitMs: 1, wait: async () => {} }));
+  assert.equal(calls, 3);
 });

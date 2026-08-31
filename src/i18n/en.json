@@ -182,7 +182,7 @@
   "check.disk-cache.warn": "/ has {free} GB free, the package cache needs about {need} GB",
   "check.disk-unknown.warn": "df does not respond",
   "check.apt-busy.ok": "free",
-  "check.apt-busy.critical": "busy with another process: wait for it to finish",
+  "check.apt-busy.critical": "busy with another process (pid {pid}, {path}): wait for it to finish",
   "check.apt-timer.warn": "apt-daily.timer is active - it will grab the dpkg lock mid-install",
   "check.session.ok": "fine",
   "check.session-detached.ok": "no TTY",
@@ -500,5 +500,6 @@
   "check.notify-off.ok": "not needed for this profile",
   "check.notify-none.ok": "not configured — a failure will only show in attach",
   "check.notify-partial.warn": "half configured: {missing} is missing. The channel will never fire and will not say so",
-  "remedy.notify-chat": "find the chat id and store it: the bot answers in that same chat"
+  "remedy.notify-chat": "find the chat id and store it: the bot answers in that same chat",
+  "event.apt.locked": "apt is busy with another process, waiting: attempt {attempt} of {of}"
 }

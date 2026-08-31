@@ -81,6 +81,11 @@ export function describe(e, t) {
     case 'predownload:done':
       return phase(ROLE.OK, p('event.predownload.name'), p('event.predownload.done'));
 
+    // Ожидание чужого apt — не ошибка и не шаг, а объяснение паузы: без него
+    // двадцать секунд тишины выглядят как зависший апгрейд.
+    case 'apt:locked':
+      return line(KIND.DETAIL, ROLE.WARN, p('event.apt.locked'));
+
     case 'services:progress':
       return phase(e.running === e.total ? ROLE.OK : ROLE.INFO, p('event.services.name'), p('event.services.value'));
 

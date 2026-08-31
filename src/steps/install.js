@@ -16,8 +16,35 @@ export function downloadArgv(pkg, version, confPath) {
   return aptArgv(confPath, ['install', '-y', '--download-only', `${pkg}=${version}`]);
 }
 
-export async function updateLists(exec, confPath) {
-  return exec(aptArgv(confPath, ['update']), { env: APT_NONINTERACTIVE, timeout: 20 * 60_000 });
+/** «Не смог взять блокировку» — так apt отвечает, когда рядом работает другой apt. */
+const LOCKED = /could not get lock|unable to (lock|acquire)|Не удалось получить блокировку/i;
+
+/**
+ * Обновление списков с ожиданием чужого apt.
+ *
+ * Параллельный `apt-get update` — apt-daily, unattended-upgrades или человек в
+ * соседней сессии — заставляет наш выйти с кодом 100 на первом же действии, и
+ * подъём в девятнадцать шагов умирает, не начавшись. Воспроизведено: два
+ * `apt-get update` одновременно дают ровно «E: Could not get lock
+ * /var/lib/apt/lists/lock».
+ *
+ * Ждём и повторяем — но только на блокировке. Любой другой отказ поднимается
+ * сразу: повтор поверх настоящей ошибки прячет её и тратит время.
+ */
+export async function updateLists(exec, confPath, {
+  attempts = 6, waitMs = 20_000, bus = null, wait = (ms) => new Promise((r) => setTimeout(r, ms)),
+} = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await exec(aptArgv(confPath, ['update']), { env: APT_NONINTERACTIVE, timeout: 20 * 60_000 });
+    } catch (err) {
+      const said = `${err?.result?.stderr ?? ''} ${err?.result?.stdout ?? ''}`;
+      if (attempt >= attempts || !LOCKED.test(said)) throw err;
+      // Молчаливое ожидание неотличимо от зависания: скажем, чего ждём.
+      bus?.emit({ t: 'apt:locked', attempt, of: attempts });
+      await wait(waitMs);
+    }
+  }
 }
 
 export async function installVersion({ exec, bus, pkg, version, confPath }) {

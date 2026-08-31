@@ -404,3 +404,17 @@ test('отложенный барьер PostgreSQL не требует --force, 
   assert.equal(gate(summary([deferred, timer]), {}).ok, false, 'таймер apt сам собой не прощается');
   assert.equal(gate(summary([deferred, timer]), { force: true }).ok, true);
 });
+
+test('занятость apt ловится по той блокировке, которую берёт update', async () => {
+  // Проверка смотрела только dpkg-блокировку и отвечала «свободен», пока рядом
+  // шёл apt-get update — а он валит наш кодом 100. Проверено на живом apt:
+  // fuser на /var/lib/apt/lists/lock возвращает 0, на dpkg-блокировке — 1.
+  const busy = await runChecks(base({}, {
+    'fuser /var/lib/apt/lists/lock': { code: 0, stdout: '11507\n' },
+  }));
+  const f = byId(busy.findings, 'apt-busy');
+  assert.equal(f.level, LEVEL.CRITICAL);
+  // Кто именно держит — половина ответа: иначе искать процесс руками.
+  assert.equal(f.params.pid, '11507');
+  assert.match(f.params.path, /lists\/lock/);
+});

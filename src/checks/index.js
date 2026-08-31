@@ -22,6 +22,9 @@ import { errorDetail } from '../core/exec.js';
  */
 export const DEPTH = { FAST: 'fast', FULL: 'full' };
 
+/** Блокировки apt: списки берёт `update`, архивы — загрузка, dpkg — установка. */
+export const APT_LOCKS = ['/var/lib/apt/lists/lock', '/var/cache/apt/archives/lock', '/var/lib/dpkg/lock-frontend'];
+
 const finding = (id, level, params = {}) => ({ id, level, params });
 const ok = (id, params) => finding(id, LEVEL.OK, params);
 const warn = (id, params) => finding(id, LEVEL.WARN, params);
@@ -140,8 +143,14 @@ export const CHECKS = [
     id: 'apt-busy',
     depth: DEPTH.FAST,
     async run({ exec }) {
-      const lock = await exec(['fuser', '/var/lib/dpkg/lock-frontend'], { readOnly: true, allowFailure: true });
-      if (lock.code === 0) return critical('apt-busy');
+      // Блокировок у apt несколько, и берут их разные команды: `apt-get update`
+      // держит список, установка — dpkg. Проверять одну dpkg-блокировку значит
+      // отвечать «свободен» ровно тогда, когда параллельный apt-get update уже
+      // идёт, — а он валит наш с кодом 100 на первом же действии. Проверено.
+      for (const path of APT_LOCKS) {
+        const lock = await exec(['fuser', path], { readOnly: true, allowFailure: true });
+        if (lock.code === 0) return critical('apt-busy', { path, pid: lock.stdout.trim() });
+      }
       const timer = await exec(['systemctl', 'is-active', 'apt-daily.timer'], { readOnly: true, allowFailure: true });
       // Таймер apt перехватит dpkg-блокировку посреди установки — редкая,
       // но крайне неприятная причина зависшего unattended-запуска.

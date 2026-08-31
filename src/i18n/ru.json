@@ -183,7 +183,7 @@
   "check.disk-cache.warn": "на / свободно {free} ГБ, под кэш пакетов нужно ~{need} ГБ",
   "check.disk-unknown.warn": "df не отвечает",
   "check.apt-busy.ok": "свободен",
-  "check.apt-busy.critical": "занят другим процессом: дождитесь его завершения",
+  "check.apt-busy.critical": "занят другим процессом (pid {pid}, {path}): дождитесь его завершения",
   "check.apt-timer.warn": "активен apt-daily.timer — перехватит блокировку dpkg посреди установки",
   "check.session.ok": "в порядке",
   "check.session-detached.ok": "без TTY",
@@ -501,5 +501,6 @@
   "check.notify-off.ok": "не нужны для этого профиля",
   "check.notify-none.ok": "не настроены — о падении узнаете только из attach",
   "check.notify-partial.warn": "настроено наполовину: не хватает {missing}. Канал не сработает и не скажет об этом",
-  "remedy.notify-chat": "узнать chat id и записать его: бот ответит в тот же чат"
+  "remedy.notify-chat": "узнать chat id и записать его: бот ответит в тот же чат",
+  "event.apt.locked": "apt занят другим процессом, жду: попытка {attempt} из {of}"
 }

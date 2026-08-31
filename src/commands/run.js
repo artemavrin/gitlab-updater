@@ -157,7 +157,7 @@ export async function commandRun(ctx, { resuming = false } = {}) {
     // Прошлый успешный запуск оставил apt-mark hold; без снятия apt-get install
     // падает уже после того, как бэкап сделан.
     await releaseHold(exec, pkg);
-    await updateLists(exec, ctx.confPath ?? null);
+    await updateLists(exec, ctx.confPath ?? null, { bus, ...(ctx.settle?.wait ? { wait: ctx.settle.wait, waitMs: 1 } : {}) });
 
     if (policy.predownload && state.stepIndex === 0) {
       await predownload({ exec, bus, pkg, versions: state.steps.map((s) => s.version), confPath: ctx.confPath ?? null });
