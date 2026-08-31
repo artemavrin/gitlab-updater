@@ -15,6 +15,7 @@ import { commandCheck } from '../src/commands/check.js';
 import { commandPlan } from '../src/commands/plan.js';
 import { commandRefreshPath } from '../src/commands/refreshPath.js';
 import { commandProxyTest } from '../src/commands/proxyTest.js';
+import { commandConfig } from '../src/commands/config.js';
 import { commandNext } from '../src/commands/next.js';
 import { commandDoctor } from '../src/commands/doctor.js';
 import { commandRun, commandResume } from '../src/commands/run.js';
@@ -44,7 +45,7 @@ for (const stream of [process.stdout, process.stderr]) {
 const RUNNERS = {
   check: commandCheck, next: commandNext, plan: commandPlan, doctor: commandDoctor,
   run: commandRun, resume: commandResume, attach: commandAttach,
-  'refresh-path': commandRefreshPath, 'proxy-test': commandProxyTest,
+  'refresh-path': commandRefreshPath, 'proxy-test': commandProxyTest, config: commandConfig,
 };
 
 const MUTATING = new Set(['run', 'resume']);
@@ -71,7 +72,7 @@ const runStamp = () => {
 
 async function main(argv) {
   const early = createTranslator(resolveLocale({}));
-  const { command, topic, flags } = parseCli(argv, { t: early });
+  const { command, topic, flags, args } = parseCli(argv, { t: early });
   const t = createTranslator(resolveLocale({ flag: flags.lang }));
   const emit = (envelope, lines) => {
     process.stdout.write(flags.json ? serialize(envelope) + '\n' : lines.join('\n') + '\n');
@@ -177,7 +178,7 @@ async function main(argv) {
   });
 
   const ctx = {
-    exec, t, flags, config, sources, bus, confPath, paint,
+    exec, t, flags, args, config, sources, bus, confPath, paint,
     data: { upgradePath, osMatrix, pgRequirements },
     osPath: '/etc/os-release',
     dataPath: new URL('../data/upgrade-path.json', import.meta.url).pathname,

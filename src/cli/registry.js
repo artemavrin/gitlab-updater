@@ -133,6 +133,17 @@ export const COMMANDS = {
     exits: { 0: 'ok' },
     result: { catalog: 'object' },
   },
+  config: {
+    // Пишет только в свой конфиг, не в систему: сервер от `config set` не
+    // меняется, поэтому mutating здесь ложью не будет.
+    mutating: false,
+    requiresRoot: false,
+    args: true,
+    flags: ['config', 'lang', 'json', 'quiet', 'no-color', 'help'],
+    exits: { 0: 'ok', 1: 'config-bad-request' },
+    result: { path: 'string', settings: 'object' },
+  },
+
   'proxy-test': {
     mutating: false,
     // Диагностику запускают до того, как получили sudo, — иначе она бесполезна.

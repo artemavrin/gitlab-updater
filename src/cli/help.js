@@ -45,7 +45,10 @@ export function renderCommandHelp(t, name) {
   const cmd = COMMANDS[name];
   if (!cmd) return [t('error.unknownCommand', { command: name, list: COMMAND_NAMES.join(', ') })];
 
-  const lines = [`  gitlab-upgrade ${name}`, '', `  ${t(`cmd.${name}.summary`)}`, ''];
+  // Форма позиционных аргументов приходит из локали: `config set <ключ>`
+  // без неё пришлось бы угадывать по справке.
+  const args = COMMANDS[name]?.args && t.has(`cmd.${name}.args`) ? ` ${t(`cmd.${name}.args`)}` : '';
+  const lines = [`  gitlab-upgrade ${name}${args}`, '', `  ${t(`cmd.${name}.summary`)}`, ''];
   lines.push(`  ${t('help.mutating')}: ${t(cmd.mutating ? 'help.yes' : 'help.no')}`);
   lines.push(`  ${t('help.requiresRoot')}: ${t(cmd.requiresRoot ? 'help.yes' : 'help.no')}`);
   lines.push('');

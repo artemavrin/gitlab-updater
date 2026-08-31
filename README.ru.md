@@ -68,6 +68,7 @@ gitlab-upgrade check             # есть ли что обновить; код
 gitlab-upgrade plan              # полный план, ничего не меняет
 gitlab-upgrade doctor            # только готовность, с командой починки у каждой находки
 gitlab-upgrade proxy test        # где рвётся цепочка до репозитория
+sudo gitlab-upgrade config set proxy socks5h://10.0.0.5:1080
 ```
 
 `check` сделан для крона и мониторинга:

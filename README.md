@@ -68,6 +68,7 @@ gitlab-upgrade check             # is there anything to upgrade? exit code says 
 gitlab-upgrade plan              # full plan, changes nothing
 gitlab-upgrade doctor            # readiness only, with the command that fixes each finding
 gitlab-upgrade proxy test        # where the chain to the repository breaks
+sudo gitlab-upgrade config set proxy socks5h://10.0.0.5:1080
 gitlab-upgrade --lang en plan
 ```
 

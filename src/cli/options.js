@@ -23,8 +23,10 @@ export function parseCli(argv, { t } = {}) {
     throw new Error(t ? t('error.unknownCommand', { command, list }) : `unknown command: ${command}. Available: ${list}`);
   }
 
+  const args = positionals.slice(1);
   return {
     command,
+    args,
     topic,
     flags: {
       from: values.from ?? null,
