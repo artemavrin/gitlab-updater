@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EventBus } from '../src/core/events.js';
 import { createTranslator, LOCALES } from '../src/i18n/index.js';
-import { createNotifier, channelsFrom, compose, send, EVENTS } from '../src/notify/index.js';
+import { createNotifier, channelsFrom, compose, send, httpFailure, EVENTS } from '../src/notify/index.js';
 import { createJournal, latestJournal, journalName } from '../src/core/logger.js';
 import { detachArgv, UNIT } from '../src/core/detach.js';
 import { commandAttach, format } from '../src/commands/attach.js';
@@ -185,4 +185,51 @@ test('увод в фон переживает выход из сессии, с �
   const fallback = detachArgv(argv, { useSystemd: false });
   assert.equal(fallback[0], 'setsid');
   assert.ok(!fallback.includes('--detach'));
+});
+
+/**
+ * Неверный токен — это не доставленное сообщение.
+ *
+ * Telegram отвечает 401 успешным HTTP-запросом: исключения нет, и до правки
+ * такой ответ считался отправкой. На пути в девятнадцать шагов это значило
+ * бы, что человек ждёт сообщений, которых не будет, и не узнает почему — а
+ * весь смысл уведомлений в том, чтобы не сидеть у терминала.
+ *
+ * Ответ 401 от настоящего api.telegram.org проверен вживую, через SOCKS-прокси.
+ */
+test('отказ по HTTP замечается и называется, а не считается отправкой', async () => {
+  const errors = [];
+  const bus = new EventBus();
+  const notifier = createNotifier({
+    bus, t, host: 'garm',
+    channels: [{ kind: 'telegram', token: '123456:AAbbCCddEEff', chat: '1' }],
+    allow: ['start'],
+    http: async () => ({ status: 401, headers: {}, body: '{"ok":false,"error_code":401,"description":"Unauthorized"}' }),
+    onError: (e) => errors.push(e),
+  });
+  bus.emit({ t: 'run:start', from: '13.12.15-ee', target: '18.11.11-ee', steps: 19, profile: 'long' });
+  await notifier.pending();
+
+  assert.ok(errors.length > 0, 'отказ обязан быть замечен');
+  assert.equal(errors[0].channel, 'telegram');
+  assert.match(errors[0].error, /401/);
+  assert.match(errors[0].error, /Unauthorized/);
+});
+
+test('в причине отказа нет токена бота', () => {
+  // Сообщение уходит на stderr, оттуда в системный журнал и в чужие тикеты.
+  const token = '123456:AAbbCCddEEff';
+  const said = httpFailure(
+    { status: 404, body: `{"description":"bot ${token} not found"}` },
+    { kind: 'telegram', token },
+  );
+  assert.ok(!said.includes(token), said);
+  assert.match(said, /404/);
+});
+
+test('успешный ответ отказом не считается', () => {
+  assert.equal(httpFailure({ status: 200, body: '{"ok":true}' }), null);
+  assert.equal(httpFailure({ status: 204, body: '' }), null);
+  // Непонятный ответ тоже не отказ: гадать здесь хуже, чем промолчать.
+  assert.equal(httpFailure(undefined), null);
 });

@@ -1,4 +1,5 @@
 import { postJson, parseProxy } from '../core/http.js';
+import { redact } from '../core/redact.js';
 
 /**
  * Уведомления.
@@ -55,6 +56,28 @@ export function compose(t, kind, params) {
  * Подписка на шину. Отправка никогда не роняет апгрейд: недоставленное
  * сообщение — потеря информации, прерванный апгрейд — потеря вечера.
  */
+/**
+ * Причина отказа по HTTP — короткой строкой и без секретов.
+ *
+ * В URL уведомления лежит токен бота, а тело ответа webhook'а может вернуть
+ * что угодно, включая присланный ему адрес. Поэтому здесь только код и
+ * описание, прогнанные через redact: сообщение уходит на stderr, а оттуда — в
+ * системный журнал и в чужие тикеты.
+ */
+export function httpFailure(res, channel = null, limit = 120) {
+  const status = Number(res?.status);
+  if (!Number.isFinite(status) || status < 400) return null;
+  const secrets = [channel?.token, channel?.url].filter((x) => typeof x === 'string');
+  const body = String(res?.body ?? '').trim();
+  let reason = '';
+  try {
+    const json = JSON.parse(body);
+    reason = String(json.description ?? json.error ?? json.message ?? '').trim();
+  } catch { reason = body.split('\n')[0]; }
+  const short = reason.length > limit ? `${reason.slice(0, limit - 1)}…` : reason;
+  return redact(`HTTP ${status}${short ? `: ${short}` : ''}`, secrets);
+}
+
 export function createNotifier({ bus, t, channels, allow = null, allowFor = null, host, proxy = null, ca = null, http = postJson, onError = null }) {
   if (!channels.length) return { pending: () => Promise.resolve(), sent: [] };
 
@@ -72,6 +95,14 @@ export function createNotifier({ bus, t, channels, allow = null, allowFor = null
     for (const channel of channels) {
       inflight.push(
         send(channel, { text, event: { kind, ...params }, http, proxy, ca })
+          // Ответ 401 — это неверный токен, а не доставленное сообщение.
+          // Запрос при этом завершается успешно, исключения нет, и без этой
+          // проверки девятнадцать шагов уведомлений уходили бы в никуда молча:
+          // человек ждёт сообщения, которого не будет, и не знает почему.
+          .then((res) => {
+            const bad = httpFailure(res, channel);
+            if (bad) onError?.({ channel: channel.kind, error: bad });
+          })
           .catch((err) => onError?.({ channel: channel.kind, error: err.message }))
       );
     }
