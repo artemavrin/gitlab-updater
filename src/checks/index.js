@@ -254,10 +254,21 @@ export function gate(summary, flags = {}, { resuming = false } = {}) {
   if (has('os-ceiling') && !flags.allowUnsupportedOs) {
     return { ok: false, reason: 'os-ceiling-not-accepted', verdict: 'doctor.osCeiling' };
   }
+  // Отложенный барьер PostgreSQL — не «предупреждение, которое надо
+  // проигнорировать», а отметка в расписании: он стоит на шаге, до которого
+  // ещё идти, и сам `run` останавливается перед этим шагом. Требовать за него
+  // --force значит противоречить собственному тексту находки («подъём можно
+  // начинать сейчас») и заодно приучать гасить --force всё остальное — включая
+  // предупреждения, которые появятся при следующем resume.
+  //
+  // Барьер на первом шаге — critical, и он останавливает выше, в blocked().
+  const deferredPg = (f) => ['postgres', 'postgres-external'].includes(f.id);
+
   // Незавершённые миграции при resume — ровно то состояние, ради выхода из
   // которого resume и запускают. Требовать за него --force бессмысленно.
   const rest = summary.findings.filter((f) =>
-    f.level === LEVEL.WARN && f.id !== 'os-ceiling' && !(resuming && f.id === 'migrations-pending'));
+    f.level === LEVEL.WARN && f.id !== 'os-ceiling' && !deferredPg(f)
+    && !(resuming && f.id === 'migrations-pending'));
   if (rest.length && !flags.force) {
     return { ok: false, reason: 'warnings-not-accepted', verdict: 'doctor.warned' };
   }

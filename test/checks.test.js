@@ -372,3 +372,35 @@ test('барьер на первом же шаге остаётся стопом
   assert.equal(f.params.step, 1);
   assert.equal(f.params.need, '14.14');
 });
+
+/**
+ * Отложенный барьер PostgreSQL не должен требовать --force.
+ *
+ * Находка сама говорит «подъём можно начинать сейчас», а ворота отвечали
+ * «нельзя без --force» — противоречие, которое человек разрешает единственным
+ * доступным способом: привыкает писать --force. А он гасит и всё остальное,
+ * включая предупреждения на следующем resume.
+ *
+ * Безопасно это потому, что run проверяет барьер перед каждым шагом и
+ * останавливается сам. Барьер на первом шаге — critical, и его --force не
+ * снимает.
+ */
+test('отложенный барьер PostgreSQL не требует --force, а первый шаг требует', () => {
+  const summary = (findings) => ({
+    findings,
+    critical: findings.filter((f) => f.level === LEVEL.CRITICAL).length,
+    warnings: findings.filter((f) => f.level === LEVEL.WARN).length,
+  });
+  const deferred = { id: 'postgres', level: LEVEL.WARN, params: { step: 8 } };
+  const external = { id: 'postgres-external', level: LEVEL.WARN, params: { step: 8 } };
+  const blocking = { id: 'postgres', level: LEVEL.CRITICAL, params: { step: 1 } };
+  const timer = { id: 'apt-timer', level: LEVEL.WARN, params: {} };
+
+  assert.equal(gate(summary([deferred]), {}).ok, true, 'старт не должен требовать флага');
+  assert.equal(gate(summary([external]), {}).ok, true);
+  // Критический барьер — стоп, и --force его не снимает.
+  assert.equal(gate(summary([blocking]), { force: true }).ok, false);
+  // Прочие предупреждения по-прежнему требуют осознанного --force.
+  assert.equal(gate(summary([deferred, timer]), {}).ok, false, 'таймер apt сам собой не прощается');
+  assert.equal(gate(summary([deferred, timer]), { force: true }).ok, true);
+});
