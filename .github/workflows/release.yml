@@ -46,6 +46,12 @@ jobs:
               -czf dist/gitlab-upgrade-src.tar.gz bin src data package.json README.md LICENSE
           ( cd dist && sha256sum gitlab-upgrade-src.tar.gz > gitlab-upgrade-src.tar.gz.sha256 )
 
+      - name: Assemble release notes
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: bash .github/release-notes.sh > release-notes.md
+
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
@@ -53,68 +59,10 @@ jobs:
           draft: false
           # Автоматические заметки собираются из заголовков коммитов, а они
           # русские: на английской странице релиза это выглядело бы как
-          # недоделка. Ссылку на список коммитов даём руками, ниже.
+          # недоделка. Тело собирается .github/release-notes.sh — его можно
+          # прочитать глазами до тега, в отличие от строки внутри workflow.
           generate_release_notes: false
-          body: |
-            Safe upgrades for self-managed **GitLab Omnibus** on Ubuntu and Debian —
-            the routine patch just as much as the long climb out of 13.x.
-
-            ## Install
-
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/setup.sh | sh
-            ```
-
-            The installer verifies the checksum before the file reaches your `PATH`,
-            honours `HTTPS_PROXY`, and installs to `/usr/local/bin` — or `~/.local/bin`
-            when you are not root. It takes `--version`, `--dir`, `--proxy`,
-            `--dry-run` and `--uninstall`.
-
-            Or by hand — one file, no `npm install`, no `node_modules` on the server.
-            Node ≥ 20 is the only requirement.
-
-            ```bash
-            curl -fsSLO https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}/gitlab-upgrade.mjs
-            curl -fsSLO https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}/gitlab-upgrade.mjs.sha256
-            sha256sum -c gitlab-upgrade.mjs.sha256
-            sudo install -m 0755 gitlab-upgrade.mjs /usr/local/bin/gitlab-upgrade
-            sudo gitlab-upgrade check
-            ```
-
-            If the server has no outbound access, download on a machine that does and
-            `scp` the file over. The tool needs the proxy only for `packages.gitlab.com`.
-
-            ## Start here
-
-            Nothing below `run` changes the server, so there is no cost to looking first.
-
-            ```bash
-            sudo gitlab-upgrade check     # is there anything to upgrade? the exit code says what kind
-            sudo gitlab-upgrade doctor    # readiness, with the command that fixes each finding
-            sudo gitlab-upgrade plan      # the whole route, computed from GitLab's own required stops
-            gitlab-upgrade proxy test     # where the chain breaks — this one needs no root
-            ```
-
-            The required stops come from GitLab's official `config/upgrade_path.yml`,
-            never written by hand — `refresh-path` diffs them against upstream and a test
-            fails if they drift.
-
-            ## Read this before the first real run
-
-            **The upgrade has not been rehearsed against a live GitLab yet.** Everything
-            known about its behaviour on a real instance comes from recorded responses and
-            official documentation, checked by offline tests. Start with `check`, `doctor`
-            and `plan`, then `run --dry-run`, and keep a snapshot of the machine — the
-            tool prints that reminder itself, because migrations are irreversible and a
-            backup is the only way back.
-
-            `rehearsal/` contains the stand for a real dress rehearsal on a throwaway
-            machine, if you would rather see it work before pointing it at anything you
-            care about.
-
-            ---
-
-            [All commits in this release](https://github.com/${{ github.repository }}/commits/${{ github.event.inputs.tag || github.ref_name }})
+          body_path: release-notes.md
           files: |
             setup.sh
             dist/gitlab-upgrade.mjs

@@ -21,10 +21,12 @@ Here the planner computes the path first and derives a **profile** from it. The 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/artemavrin/gitlab-updater/main/setup.sh | sh
+curl -fsSL https://raw.githubusercontent.com/artemavrin/gitlab-updater/main/setup.sh | sudo sh
 ```
 
-The installer verifies the checksum before the file reaches your `PATH`, honours `HTTPS_PROXY`, and installs to `/usr/local/bin` — or `~/.local/bin` when you are not root. It takes `--version`, `--dir`, `--proxy`, `--dry-run` and `--uninstall`.
+The installer verifies the checksum before the file reaches your `PATH`, honours `HTTPS_PROXY`, and installs to `/usr/local/bin` — or `~/.local/bin` when you are not root. It takes `--version`, `--dir`, `--proxy`, `--node`, `--dry-run` and `--uninstall`.
+
+A server often carries more than one Node, and `sudo` sees a different `PATH` than you do — an old `/usr/local/bin/node` beside a current one in `nvm` is the usual shape. The installer looks past `PATH` and pins the interpreter it found, so the command works under `sudo` too; `--node /path/to/node` overrides the choice.
 
 Piping a script into a shell deserves a word on what protects you here. The whole script is wrapped in a function invoked by its last line, so a connection dropped mid-download runs nothing rather than half an install. The downloaded bundle is checked against the published `.sha256` and a mismatch is a refusal, not a warning. Both cases are covered by tests. If you would rather read it first: [`setup.sh`](setup.sh).
 
