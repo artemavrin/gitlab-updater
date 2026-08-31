@@ -32,7 +32,11 @@ export const REPO_HOSTS = [GITLAB_REPO_HOST, GITLAB_DOWNLOAD_HOST];
  * глобальный прокси сломал бы apt-get update.
  */
 export function renderAptConf({ proxy, hosts = REPO_HOSTS, all = false, ca = null }) {
-  const lines = ['// создано gitlab-upgrade, временный файл'];
+  // Комментарий строго ASCII: файл читает не человек, а apt, и на что его
+  // разбор способен обидеться в чужой версии — не наше дело угадывать. На
+  // apt 2.8 кириллица в комментарии проходит, на 2.0 проверить нечем, а
+  // ставка — единственная настройка, без которой пакеты не скачаются.
+  const lines = ['// created by gitlab-upgrade, temporary file'];
   if (proxy) {
     for (const scheme of ['http', 'https']) {
       if (all) lines.push(`Acquire::${scheme}::Proxy "${proxy}";`);

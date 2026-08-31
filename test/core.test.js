@@ -121,3 +121,13 @@ test('в отказе показывается ошибка, а не преду�
   assert.match(errorDetail('W: только предупреждение\n'), /^W:/);
   assert.equal(errorDetail(''), '');
 });
+
+test('во временном apt.conf нет ничего, кроме ASCII', () => {
+  // Этот файл читает apt, а не человек: любой байт вне ASCII здесь — ставка на
+  // то, что чужой разборщик поведёт себя так же, как на нашей машине. Проверить
+  // это на всех версиях apt мы не можем, а цена ошибки — прокси, без которого
+  // не скачается ни один пакет.
+  const conf = renderAptConf({ proxy: 'socks5h://svc:s3cret@10.0.0.5:1080', ca: '/etc/ssl/corp.crt' });
+  const bad = [...conf].filter((ch) => ch.codePointAt(0) > 126);
+  assert.deepEqual(bad, [], `не-ASCII в конфиге apt: ${JSON.stringify(bad.join(''))}`);
+});
