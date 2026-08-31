@@ -1,6 +1,8 @@
 import { LEVEL } from '../core/events.js';
 import { detectServices, detectPostgres, missingKeyServices, parsePgVersion } from '../detect/services.js';
 import { inMultiplexer } from '../detect/session.js';
+import { describeChannels } from '../notify/index.js';
+import { policyFor } from '../plan/planner.js';
 import { freeBytes, toGb, GB } from '../detect/disk.js';
 import { postgresRange, osCeiling, comparePg, pgMajor } from '../plan/matrices.js';
 import { parseVersion, compareVersions, withinCeiling } from '../plan/version.js';
@@ -84,6 +86,26 @@ export const CHECKS = [
       if (failed > 0) return critical('migrations-failed', { n: failed });
       if (queued > 0) return warn('migrations-pending', { n: queued });
       return ok('migrations');
+    },
+  },
+
+  {
+    id: 'notify',
+    depth: DEPTH.FAST,
+    async run({ config = {}, env = {}, plan }) {
+      // Профиль решает, шлём ли мы вообще: патч на двенадцать минут не пишет
+      // на телефон, и требовать от него канал незачем.
+      const policy = policyFor(plan?.profile);
+      if (!policy.notify.length || config.notify === false) return ok('notify-off');
+
+      const { partial, kinds } = describeChannels(config, env);
+      // Наполовину настроенный канал — не «выключено», а «никогда не сработает
+      // и ничего об этом не скажет». Это ошибка, и её называем.
+      if (partial.length) return warn('notify-partial', { missing: partial.join(', ') });
+      // Каналов нет вовсе — осознанный выбор, мешать не будем. Но на длинном
+      // пути под --detach стоит помнить, чем за него платят.
+      if (!kinds.length) return ok('notify-none');
+      return ok('notify', { channels: kinds.join(', ') });
     },
   },
 

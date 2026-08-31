@@ -495,5 +495,11 @@
   "exit.telegram-failed": "chat id узнать не удалось: нет токена, webhook на боте или боту никто не написал",
   "run.stop.postgres-step": "ОСТАНОВЛЕНО перед {step}: PostgreSQL {have}, а этот шаг требует не ниже {need}. Нужную версию приносит пакет по пути — поднимите базу и продолжите.",
   "event.stop.postgres-step": "PostgreSQL ниже требуемого для этого шага",
-  "remedy.pg-later": "поднять встроенный PostgreSQL перед этим шагом, когда его принесёт установленный пакет"
+  "remedy.pg-later": "поднять встроенный PostgreSQL перед этим шагом, когда его принесёт установленный пакет",
+  "check.notify.title": "уведомления",
+  "check.notify.ok": "настроены: {channels}",
+  "check.notify-off.ok": "не нужны для этого профиля",
+  "check.notify-none.ok": "не настроены — о падении узнаете только из attach",
+  "check.notify-partial.warn": "настроено наполовину: не хватает {missing}. Канал не сработает и не скажет об этом",
+  "remedy.notify-chat": "узнать chat id и записать его: бот ответит в тот же чат"
 }

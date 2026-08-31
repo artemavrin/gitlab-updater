@@ -233,3 +233,57 @@ test('успешный ответ отказом не считается', () =>
   // Непонятный ответ тоже не отказ: гадать здесь хуже, чем промолчать.
   assert.equal(httpFailure(undefined), null);
 });
+
+/**
+ * Наполовину настроенный канал молчал вдвойне: не слал сообщений и не говорил,
+ * что не будет.
+ *
+ * channelsFrom требует и токен, и chat id; при одном из двух он возвращает
+ * пустой список, createNotifier становится заглушкой, и человек узнаёт об этом
+ * ровно тогда, когда ждёт сообщения о падении девятнадцатишагового подъёма.
+ */
+test('канал, настроенный наполовину, называется до запуска', async () => {
+  const { CHECKS } = await import('../src/checks/index.js');
+  const check = CHECKS.find((c) => c.id === 'notify');
+  const long = { profile: 'long' };
+  const at = async (config, env = {}) => check.run({ config, env, plan: long });
+
+  const half = await at({ telegramToken: '123:AA' });
+  assert.equal(half.level, 'warn');
+  assert.match(half.params.missing, /telegram-chat/);
+
+  const other = await at({ telegramChat: '42' });
+  assert.match(other.params.missing, /telegram-token/);
+
+  // Полностью настроенный — просто в порядке.
+  const full = await at({ telegramToken: '123:AA', telegramChat: '42' });
+  assert.equal(full.level, 'ok');
+  assert.match(full.params.channels, /telegram/);
+});
+
+test('отсутствие каналов не мешает, но и не прячется', async () => {
+  const { CHECKS } = await import('../src/checks/index.js');
+  const check = CHECKS.find((c) => c.id === 'notify');
+  // Не настраивать уведомления — осознанный выбор, и он не должен требовать
+  // --force. Но на длинном пути под --detach о цене стоит помнить.
+  const none = await check.run({ config: {}, env: {}, plan: { profile: 'long' } });
+  assert.equal(none.level, 'ok');
+  assert.equal(none.id, 'notify-none');
+
+  // Патч не шлёт «начал» и «закончил», но о падении сообщает — значит канал
+  // нужен и ему. Профиль, который молчит совсем, — это «обновляться некуда».
+  const patch = await check.run({ config: {}, env: {}, plan: { profile: 'patch' } });
+  assert.equal(patch.id, 'notify-none');
+  const nothing = await check.run({ config: {}, env: {}, plan: { profile: 'current' } });
+  assert.equal(nothing.id, 'notify-off');
+
+  // Выключено руками — тоже не повод ворчать.
+  const off = await check.run({ config: { notify: false }, env: {}, plan: { profile: 'long' } });
+  assert.equal(off.id, 'notify-off');
+});
+
+test('у наполовину настроенного канала есть починка одной командой', async () => {
+  const { remedyFor } = await import('../src/checks/remedies.js');
+  const r = remedyFor({ id: 'notify-partial', level: 'warn', params: { missing: 'telegram-chat' } });
+  assert.deepEqual(r?.argv, ['gitlab-upgrade', 'notify', 'chat', '--yes']);
+});

@@ -25,6 +25,23 @@ export function channelsFrom(config, env = process.env) {
   return out;
 }
 
+/**
+ * Что из каналов настроено, а что настроено наполовину.
+ *
+ * Telegram без chat id (или наоборот) — не «канал выключен», а канал, который
+ * молча никогда не сработает: channelsFrom его просто не вернёт, createNotifier
+ * станет заглушкой, и человек узнает об этом ровно тогда, когда будет ждать
+ * сообщения о падении. Такое надо называть заранее.
+ */
+export function describeChannels(config = {}, env = process.env) {
+  const channels = channelsFrom(config, env);
+  const partial = [];
+  const token = config.telegramToken ?? env.TELEGRAM_BOT_TOKEN;
+  const chat = config.telegramChat ?? env.TELEGRAM_CHAT_ID;
+  if (Boolean(token) !== Boolean(chat)) partial.push(token ? 'telegram-chat' : 'telegram-token');
+  return { channels, partial, kinds: channels.map((c) => c.kind) };
+}
+
 export async function send(channel, { text, event, http = postJson, proxy = null, ca = null, timeout = 15_000 }) {
   const opts = { proxy: parseProxy(proxy), ca, timeout };
   if (channel.kind === 'telegram') {

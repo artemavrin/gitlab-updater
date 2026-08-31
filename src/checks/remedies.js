@@ -83,6 +83,8 @@ export const REMEDIES = {
 
   'os-ceiling.warn': flag('safe-for-os', '--safe-for-os', DOCS.os),
   'session.warn': flag('detach', '--detach'),
+  // Своя же команда: она и найдёт chat id, и запишет его.
+  'notify-partial.warn': run('notify-chat', ['gitlab-upgrade', 'notify', 'chat', '--yes']),
 
   // Диагностика прокси. Здесь починка — половина смысла команды: «пакетов
   // не видно» ищут перебором именно потому, что никто не сказал, что нажать.

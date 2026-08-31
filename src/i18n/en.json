@@ -494,5 +494,11 @@
   "exit.telegram-failed": "could not find the chat id: no token, a webhook on the bot, or nobody wrote to it",
   "run.stop.postgres-step": "STOPPED before {step}: PostgreSQL {have}, and this step needs {need} or newer. The version arrives with a package along the way — upgrade the database, then continue.",
   "event.stop.postgres-step": "PostgreSQL below what this step needs",
-  "remedy.pg-later": "upgrade the bundled PostgreSQL before that step, once an installed package brings it"
+  "remedy.pg-later": "upgrade the bundled PostgreSQL before that step, once an installed package brings it",
+  "check.notify.title": "notifications",
+  "check.notify.ok": "configured: {channels}",
+  "check.notify-off.ok": "not needed for this profile",
+  "check.notify-none.ok": "not configured — a failure will only show in attach",
+  "check.notify-partial.warn": "half configured: {missing} is missing. The channel will never fire and will not say so",
+  "remedy.notify-chat": "find the chat id and store it: the bot answers in that same chat"
 }
