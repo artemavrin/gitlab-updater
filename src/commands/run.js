@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { acquireLock, LockedError } from '../core/lock.js';
 import { saveState, clearState, loadState, reconcile } from '../core/state.js';
 import { runChecks, DEPTH, blocked, gate } from '../checks/index.js';
+import { execFailure } from '../core/exec.js';
 import { runBackup, MODE as BACKUP } from '../steps/backup.js';
 import { installVersion, predownload, updateLists, holdArgv, releaseHold } from '../steps/install.js';
 import { waitServices, waitMigrations, MigrationsFailed } from '../steps/settle.js';
@@ -261,10 +262,14 @@ export async function commandRun(ctx, { resuming = false } = {}) {
     // Падение apt-get или gitlab-backup — самый вероятный исход, и именно
     // там подсказка про resume нужнее всего. Терять её в общем обработчике
     // значит бросать человека с состоянием на диске и без объяснений.
-    bus?.emit({ t: 'run:stopped', reason: 'step-failed', detail: err.message, version: null, backup: null });
+    // Что именно ответила команда — единственное, ради чего в эту строку
+    // смотрят. Раньше здесь был машинный err.message, и человек оставался с
+    // кодом 100 без слова о причине.
+    const said = execFailure(err);
+    bus?.emit({ t: 'run:stopped', reason: 'step-failed', detail: said, version: null, backup: null });
     return {
-      code: EXIT.ERROR, errorCode: 'step-failed', detail: err.message,
-      lines: [...lines, ` ${t('run.stop.step-failed', { detail: err.message })}`, '', `   ${t('run.stop.resumeHint')}`],
+      code: EXIT.ERROR, errorCode: 'step-failed', detail: said,
+      lines: [...lines, ` ${t('run.stop.step-failed', { detail: said })}`, '', `   ${t('run.stop.resumeHint')}`],
     };
   } finally {
     lock.release();

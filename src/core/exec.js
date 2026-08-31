@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { redactArgv } from './redact.js';
+import { redactArgv, redactUrl } from './redact.js';
 
 export const MODE = { REAL: 'real', DRY: 'dry', REPLAY: 'replay' };
 
@@ -117,7 +117,33 @@ export function createExec({ mode = MODE.REAL, fixtures = null, bus = null, secr
 export function errorDetail(stderr, limit = 200) {
   const lines = String(stderr ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return '';
-  const named = lines.find((l) => /undefined method|NoMethodError|Error|no such|not found|cannot|denied/i.test(l));
-  const line = named ?? lines[lines.length - 1];
+  // Предупреждения — не причина отказа. У apt «W: GPG error…» стоит выше, чем
+  // «E: The repository … is not signed», и попадалось первым: человек читал
+  // жалобу вместо диагноза.
+  const warning = (l) => /^(W:|warning\b)/i.test(l);
+  const loud = lines.filter((l) => !warning(l));
+  const pool = loud.length ? loud : lines;
+  const line = pool.find((l) => /^(E:|error\b)/i.test(l))
+    ?? pool.find((l) => /undefined method|NoMethodError|Error|no such|not found|cannot|denied/i.test(l))
+    ?? pool[pool.length - 1];
   return line.length > limit ? `${line.slice(0, limit - 1)}…` : line;
+}
+
+/**
+ * Отказ команды — человеку: что запускали и что оно ответило.
+ *
+ * `ExecError.message` намеренно машинный, в нём только код и argv. На экране
+ * остановки этого мало: «exec-failed code=100 argv=apt-get … update» не
+ * содержит ровно того, ради чего в него смотрят — что сказал apt. Причина всё
+ * это время лежала в err.result.stderr и никуда не выводилась.
+ *
+ * Прогоняем через redactUrl: в жалобе apt на прокси бывает его URL целиком,
+ * вместе с паролем, а строка уходит на экран, в журнал и в уведомление.
+ */
+export function execFailure(err, limit = 300) {
+  const r = err?.result ?? {};
+  const said = errorDetail(r.stderr, limit) || errorDetail(r.stdout, limit);
+  const argv = Array.isArray(r.argv) ? r.argv.join(' ') : String(r.argv ?? '');
+  const head = argv ? `${argv} → ${r.code}` : (err?.message ?? '');
+  return redactUrl(said ? `${head}: ${said}` : head);
 }

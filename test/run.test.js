@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createExec, MODE } from '../src/core/exec.js';
+import { createExec, MODE, ExecError } from '../src/core/exec.js';
 import { createTranslator } from '../src/i18n/index.js';
 import { commandRun, commandResume } from '../src/commands/run.js';
 import { loadState, saveState, statePath } from '../src/core/state.js';
@@ -457,4 +457,57 @@ test('неопределимая версия PostgreSQL не останавли
   });
   const r = await commandRun(ctx);
   assert.equal(r.code, EXIT.CURRENT, r.lines.join('\n'));
+});
+
+/**
+ * Настоящая остановка с боевой машины:
+ *
+ *   ОСТАНОВЛЕНО: шаг не выполнился — exec-failed code=100
+ *   argv=apt-get -c /var/lib/gitlab-upgrade/apt-proxy.2130032.conf update
+ *
+ * В строке есть всё, кроме того единственного, ради чего в неё смотрят: что
+ * ответил apt. Причина всё это время лежала в err.result.stderr, и её просто
+ * не выводили — человек оставался с кодом 100 и без слова о том, что чинить.
+ */
+test('отказ шага показывает, что ответила команда, а не только её код', async () => {
+  const { ctx } = bed();
+  const real = ctx.exec;
+  ctx.exec = async (argv, opts) => {
+    if (argv.join(' ').startsWith('apt-get update')) {
+      throw new ExecError('exec-failed', {
+        code: 100,
+        argv: 'apt-get -c /var/lib/gitlab-upgrade/apt-proxy.42.conf update',
+        stdout: '',
+        stderr: 'W: GPG error: https://packages.gitlab.com/… InRelease: NO_PUBKEY 3F01618A51312F3F\n'
+          + "E: The repository 'https://packages.gitlab.com/… focal InRelease' is not signed.\n",
+      });
+    }
+    return real(argv, opts);
+  };
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'step-failed');
+  const text = r.lines.join('\n');
+  assert.match(text, /is not signed|NO_PUBKEY/, `причина обязана быть видна:\n${text}`);
+  assert.match(text, /100/, 'код тоже нужен');
+  assert.match(text, /resume --yes/);
+});
+
+test('пароль прокси не утекает из жалобы apt', async () => {
+  // apt охотно печатает URL прокси целиком, а строка уходит на экран, в
+  // журнал и в уведомление на телефон.
+  const { ctx } = bed();
+  const real = ctx.exec;
+  ctx.exec = async (argv, opts) => {
+    if (argv.join(' ').startsWith('apt-get update')) {
+      throw new ExecError('exec-failed', {
+        code: 100, argv: 'apt-get update', stdout: '',
+        stderr: 'E: Failed to fetch via socks5h://svc:s3cret@10.0.0.5:1080 — 407\n',
+      });
+    }
+    return real(argv, opts);
+  };
+  const r = await commandRun(ctx);
+  const text = r.lines.join('\n');
+  assert.ok(!text.includes('s3cret'), text);
+  assert.match(text, /svc:\*\*\*@/);
 });

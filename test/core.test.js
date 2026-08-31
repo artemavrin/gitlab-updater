@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { redact, redactUrl } from '../src/core/redact.js';
-import { createExec, MODE, ExecError } from '../src/core/exec.js';
+import { createExec, MODE, ExecError, errorDetail } from '../src/core/exec.js';
 import { EventBus } from '../src/core/events.js';
 import { renderAptConf, openAptConf } from '../src/net/aptProxy.js';
 import { mkdtempSync, writeFileSync, readFileSync, statSync, existsSync } from 'node:fs';
@@ -110,4 +110,14 @@ test('там, где stateDir доступен, файл ложится имен
   assert.equal(dirname(conf.path), state);
   conf.cleanup();
   assert.equal(existsSync(conf.path), false);
+});
+
+test('в отказе показывается ошибка, а не предупреждение рядом с ней', () => {
+  // Настоящий вывод apt: W: стоит первым, а причина отказа — в E:.
+  const apt = 'W: GPG error: https://packages.gitlab.com/… InRelease: NO_PUBKEY 3F01618A51312F3F\n'
+    + "E: The repository 'https://packages.gitlab.com/… focal InRelease' is not signed.\n";
+  assert.match(errorDetail(apt), /^E: The repository/);
+  // Если ничего кроме предупреждений нет — лучше показать их, чем промолчать.
+  assert.match(errorDetail('W: только предупреждение\n'), /^W:/);
+  assert.equal(errorDetail(''), '');
 });
