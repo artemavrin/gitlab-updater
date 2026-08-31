@@ -131,10 +131,12 @@ test('PostgreSQL выше протестированного максимума 
 });
 
 test('потолок ОС предупреждает, а с --safe-for-os молчит', async () => {
-  const focal = { id: 'ubuntu', versionId: '20.04', pretty: 'Ubuntu 20.04.6 LTS', supported: true };
-  const warn = await runChecks(base({ os: focal }), { depth: DEPTH.FULL });
+  // 18.04, а не 20.04: для focal опубликовано до 18.11, и цель 17.11 в него
+  // помещается. Тест на потолке обязан брать ОС, у которой потолок режет.
+  const bionic = { id: 'ubuntu', versionId: '18.04', pretty: 'Ubuntu 18.04.6 LTS', supported: true };
+  const warn = await runChecks(base({ os: bionic }), { depth: DEPTH.FULL });
   assert.equal(byId(warn.findings, 'os-ceiling').level, LEVEL.WARN);
-  const quiet = await runChecks(base({ os: focal, safeForOs: true }), { depth: DEPTH.FULL });
+  const quiet = await runChecks(base({ os: bionic, safeForOs: true }), { depth: DEPTH.FULL });
   assert.equal(byId(quiet.findings, 'os-ceiling').level, LEVEL.OK);
 });
 

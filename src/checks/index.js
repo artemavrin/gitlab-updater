@@ -2,7 +2,7 @@ import { LEVEL } from '../core/events.js';
 import { detectServices, detectPostgres, missingKeyServices, parsePgVersion } from '../detect/services.js';
 import { freeBytes, toGb, GB } from '../detect/disk.js';
 import { postgresRange, osCeiling, comparePg, pgMajor } from '../plan/matrices.js';
-import { parseVersion, compareVersions } from '../plan/version.js';
+import { parseVersion, compareVersions, withinCeiling } from '../plan/version.js';
 import { remedyFor } from './remedies.js';
 
 /**
@@ -143,7 +143,7 @@ export const CHECKS = [
     async run({ os, plan, data, safeForOs }) {
       const max = osCeiling(data.osMatrix, os);
       if (!max || !plan?.target) return ok('os-ceiling');
-      if (compareVersions(plan.target, parseVersion(max)) <= 0) return ok('os-ceiling');
+      if (withinCeiling(plan.target, max)) return ok('os-ceiling');
       return safeForOs
         ? ok('os-ceiling')
         : warn('os-ceiling', { os: os.pretty, max, target: plan.target.raw });

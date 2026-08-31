@@ -45,3 +45,18 @@ export function latestPatchOf(available, major, minor) {
   const inMinor = available.filter((v) => v.major === major && v.minor === minor);
   return inMinor.length ? inMinor[inMinor.length - 1] : null;
 }
+
+/**
+ * Версия не выше потолка, где потолок записан минорной серией.
+ *
+ * В `data/os-matrix.json` потолок — это «16.11», то есть вся линейка 16.11.x,
+ * а не точка 16.11.0. Обычное сравнение считает отсутствующий patch нулём и
+ * отрезает последнюю серию целиком: для bionic путь заканчивался на 16.7
+ * вместо 16.11, то есть на минорную версию раньше, чем нужно.
+ */
+export function withinCeiling(v, ceil) {
+  const C = typeof ceil === 'string' ? parseVersion(ceil) : ceil;
+  if (!C) return true;
+  if (C.patch !== null) return compareVersions(v, C) <= 0;
+  return v.major < C.major || (v.major === C.major && v.minor <= C.minor);
+}

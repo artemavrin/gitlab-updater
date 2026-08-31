@@ -1,4 +1,4 @@
-import { parseVersion, compareVersions, latestPatchOf, minorOf, sameMinor, shortVersion } from './version.js';
+import { parseVersion, compareVersions, latestPatchOf, minorOf, sameMinor, shortVersion, withinCeiling } from './version.js';
 import { stopVersions } from './upgradePathSource.js';
 
 export const PROFILE = { CURRENT: 'current', PATCH: 'patch', MINOR: 'minor', LONG: 'long' };
@@ -22,8 +22,7 @@ function ceiling({ available, osMax, targetMajor, to, patchOnly, current }) {
   const newest = available[available.length - 1];
   if (newest) limits.push({ v: newest, reason: 'latest-available' });
   if (osMax) {
-    const m = parseVersion(osMax);
-    const fit = available.filter((v) => compareVersions(v, m) <= 0).pop();
+    const fit = available.filter((v) => withinCeiling(v, osMax)).pop();
     if (fit) limits.push({ v: fit, reason: 'os-ceiling' });
   }
   if (targetMajor) {

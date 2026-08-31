@@ -37,6 +37,13 @@ VERSION_ID="20.04"
 ID=ubuntu
 `;
 
+/** ОС, у которой потолок действительно режет: для bionic опубликовано до 16.11. */
+export const osReleaseBionic = `PRETTY_NAME="Ubuntu 18.04.6 LTS"
+NAME="Ubuntu"
+VERSION_ID="18.04"
+ID=ubuntu
+`;
+
 export const ctlStatusHealthy = `run: alertmanager: (pid 1234) 500s; run: log: (pid 1200) 500s
 run: gitaly: (pid 1235) 500s; run: log: (pid 1201) 500s
 run: gitlab-kas: (pid 1236) 500s; run: log: (pid 1202) 500s

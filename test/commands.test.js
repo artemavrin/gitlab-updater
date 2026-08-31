@@ -6,7 +6,7 @@ import { createTranslator } from '../src/i18n/index.js';
 import { commandCheck } from '../src/commands/check.js';
 import { commandPlan } from '../src/commands/plan.js';
 import { EXIT } from '../src/plan/planner.js';
-import { fixturesFor, checkFixtures, osReleaseJammy, osReleaseFocal } from './fixtures/index.js';
+import { fixturesFor, checkFixtures, osReleaseJammy, osReleaseFocal, osReleaseBionic } from './fixtures/index.js';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -70,12 +70,20 @@ test('пароль прокси не попадает в вывод плана',
   assert.match(text, /svc:\*\*\*@/);
 });
 
-test('--safe-for-os на 20.04 обрезает путь и объясняет причину', async () => {
-  const r = await commandPlan(ctx('16.3.9-ee.0', { os: osReleaseFocal, safeForOs: true }));
+test('--safe-for-os на 18.04 обрезает путь и объясняет причину', async () => {
+  // Для bionic опубликовано до 16.11 — путь обязан на ней и закончиться.
+  const r = await commandPlan(ctx('16.3.9-ee.0', { os: osReleaseBionic, safeForOs: true }));
   const text = r.lines.join('\n');
-  assert.match(text, /17\.5\.5-ee\.0/);
-  assert.ok(!/17\.11\.6/.test(text));
+  assert.match(text, /16\.11\.10-ee\.0/);
+  assert.ok(!/17\.11\.6/.test(text), 'выше потолка ОС путь идти не должен');
   assert.match(text, /потолок текущей ОС/);
+});
+
+test('на 20.04 путь до 17.11 не обрезается — для focal опубликовано выше', async () => {
+  // Ровно то, что до 31.08.2026 инструмент делал неверно: focal стоял 17.7,
+  // и пользователь получил бы остановку на полтора года раньше нужного.
+  const r = await commandPlan(ctx('16.3.9-ee.0', { os: osReleaseFocal, safeForOs: true }));
+  assert.match(r.lines.join('\n'), /17\.11\.6-ee\.0/);
 });
 
 test('план рендерится в обеих локалях и укладывается в 78 колонок', async () => {
