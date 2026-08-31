@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, extname } from 'node:path';
 import { LOCALES } from '../src/i18n/index.js';
 
@@ -49,6 +50,19 @@ for (const file of walk('src').filter(SOURCES)) {
   const src = stripComments(readFileSync(file, 'utf8'));
   if (/\b(execSync|spawnSync|child_process)\b/.test(src)) {
     errors.push(`${file}: запуск команд мимо src/core/exec.js`);
+  }
+}
+
+/**
+ * Разбор файла. Линт, который не замечает синтаксической ошибки, даёт ложное
+ * «ошибок 0» — а именно так и случилось: `a ?? b || c` без скобок прошло
+ * проверку и упало уже на запуске. .jsx пропускаем: это не JavaScript, его
+ * разбирает esbuild при сборке.
+ */
+for (const file of walk('src').concat(walk('bin')).filter((f) => extname(f) === '.js')) {
+  const r = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
+  if (r.status !== 0) {
+    errors.push(`${file}: не разбирается — ${(r.stderr || '').split('\n').find((l) => l.includes('Error')) ?? 'ошибка разбора'}`);
   }
 }
 

@@ -15,6 +15,7 @@ import { commandCheck } from '../src/commands/check.js';
 import { commandPlan } from '../src/commands/plan.js';
 import { commandRefreshPath } from '../src/commands/refreshPath.js';
 import { commandProxyTest } from '../src/commands/proxyTest.js';
+import { commandNotifyChat } from '../src/commands/notifyChat.js';
 import { commandConfig } from '../src/commands/config.js';
 import { commandNext } from '../src/commands/next.js';
 import { commandDoctor } from '../src/commands/doctor.js';
@@ -46,6 +47,7 @@ const RUNNERS = {
   check: commandCheck, next: commandNext, plan: commandPlan, doctor: commandDoctor,
   run: commandRun, resume: commandResume, attach: commandAttach,
   'refresh-path': commandRefreshPath, 'proxy-test': commandProxyTest, config: commandConfig,
+  'notify-chat': commandNotifyChat,
 };
 
 const MUTATING = new Set(['run', 'resume']);

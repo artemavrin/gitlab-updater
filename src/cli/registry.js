@@ -155,6 +155,16 @@ export const COMMANDS = {
     result: { proxy: 'string', ok: 'number', warnings: 'number', critical: 'number', findings: 'array' },
   },
 
+  'notify-chat': {
+    mutating: false,
+    // Пишет только в свой конфиг, и только с --yes. Токен берётся оттуда же,
+    // а не из флага: аргумент командной строки виден в `ps` любому на машине.
+    requiresRoot: false,
+    flags: ['yes', ...COMMON],
+    exits: { 0: 'ok', 1: 'telegram-failed' },
+    result: { chats: 'array', configured: 'boolean' },
+  },
+
   version: { mutating: false, requiresRoot: false, flags: ['json', 'help'], exits: { 0: 'ok' }, result: { version: 'string' } },
   help:    { mutating: false, requiresRoot: false, flags: ['lang', 'json'], exits: { 0: 'ok' }, result: null },
 };

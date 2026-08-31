@@ -183,6 +183,24 @@ The required stops in `data/upgrade-path.json` are generated from GitLab's offic
 
 Conditional stops — currently 17.1 — are taken like required ones. Whether one applies to a given instance cannot be determined reliably, and an extra step costs about forty minutes against the integrity of the data.
 
+### Notifications
+
+A climb out of 13.x takes hours, and the point of `--detach` is not sitting at
+the terminal. Telegram needs a chat id, and finding one by hand means `curl`,
+`grep` over JSON, and your bot token on a command line where `ps` can read it.
+The token is already in the config, so the tool asks Telegram itself:
+
+```bash
+sudo gitlab-upgrade config set telegram-token <token>
+gitlab-upgrade notify chat          # press Start in the bot chat; the id arrives there
+gitlab-upgrade notify chat --yes    # and is written to the config
+```
+
+The reply goes into the chat itself, because that is where you will be looking.
+When more than one person has written to the bot it never picks for you — it
+shows them all and waits. Notifications go through the same proxy as the
+repository.
+
 ## For agents
 
 The CLI is discoverable without parsing human help. `gitlab-upgrade api` (or `--help --json`) emits a catalog of every command, flag, exit code, result field and error code:
