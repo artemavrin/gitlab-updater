@@ -1,5 +1,5 @@
 import { LEVEL } from '../core/events.js';
-import { detectServices, missingKeyServices, parsePgVersion } from '../detect/services.js';
+import { detectServices, detectPostgres, missingKeyServices, parsePgVersion } from '../detect/services.js';
 import { freeBytes, toGb, GB } from '../detect/disk.js';
 import { postgresRange, osCeiling, comparePg, pgMajor } from '../plan/matrices.js';
 import { parseVersion, compareVersions } from '../plan/version.js';
@@ -163,7 +163,12 @@ export const CHECKS = [
       // приезжает вместе с Omnibus, и проверять нечего.
       if (!range) return ok('postgres', { have });
       if (comparePg(have, range.min) < 0) {
-        return critical('postgres', { have, need: range.min, target: plan.target.raw });
+        // Для внешней БД `gitlab-ctl pg-upgrade` не применяется, а на
+        // Patroni/HA запрещён документацией. Находка отдельная — иначе
+        // экран советует команду, которая ничего не сделает.
+        const where = await detectPostgres(exec);
+        const id = where.bundled === true ? 'postgres' : 'postgres-external';
+        return critical(id, { have, need: range.min, target: plan.target.raw });
       }
       // Выше протестированного максимума — вопрос поддерживаемости, а не поломки,
       // поэтому предупреждение. Сравниваем по мажорной: максимум задан как «16».

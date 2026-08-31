@@ -20,7 +20,15 @@ Here the planner computes the path first and derives a **profile** from it. The 
 
 ## Install
 
-One file. No `npm install`, no `node_modules` on the server — Node ≥ 20 is the only requirement.
+```bash
+curl -fsSL https://raw.githubusercontent.com/artemavrin/gitlab-updater/main/setup.sh | sh
+```
+
+The installer verifies the checksum before the file reaches your `PATH`, honours `HTTPS_PROXY`, and installs to `/usr/local/bin` — or `~/.local/bin` when you are not root. It takes `--version`, `--dir`, `--proxy`, `--dry-run` and `--uninstall`.
+
+Piping a script into a shell deserves a word on what protects you here. The whole script is wrapped in a function invoked by its last line, so a connection dropped mid-download runs nothing rather than half an install. The downloaded bundle is checked against the published `.sha256` and a mismatch is a refusal, not a warning. Both cases are covered by tests. If you would rather read it first: [`setup.sh`](setup.sh).
+
+Or by hand — one file, no `npm install`, no `node_modules` on the server. Node ≥ 20 is the only requirement.
 
 ```bash
 curl -fsSLO https://github.com/artemavrin/gitlab-updater/releases/latest/download/gitlab-upgrade.mjs

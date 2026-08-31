@@ -285,3 +285,41 @@ test('контейнер отвергается, а поблажка стенд�
   // И всё равно требует явного --force, а не проходит сама собой.
   assert.equal(gate(waived, {}).reason, 'warnings-not-accepted');
 });
+
+const PG_RB = "grep -E ^\\s*postgresql\\['enable'\\] /etc/gitlab/gitlab.rb";
+
+test('внешняя БД не получает совет gitlab-ctl pg-upgrade', async () => {
+  // Для внешней команда неприменима, а на Patroni/HA запрещена
+  // документацией: совет, который выглядит authoritative и ничего не
+  // делает, хуже отсутствия совета.
+  const s = await runChecks(base({}, {
+    'gitlab-psql --version': { code: 0, stdout: 'psql (PostgreSQL) 13.11' },
+    [PG_RB]: { code: 0, stdout: "postgresql['enable'] = false" },
+  }), { depth: DEPTH.FULL });
+  const f = s.findings.find((x) => x.check === 'postgres');
+  assert.equal(f.id, 'postgres-external');
+  assert.equal(f.level, LEVEL.CRITICAL);
+  assert.equal(f.remedy.argv, null, 'команды тут быть не должно');
+  assert.match(f.remedy.docs, /external_upgrade/);
+});
+
+test('встроенная БД получает pg-upgrade', async () => {
+  const s = await runChecks(base({}, {
+    'gitlab-psql --version': { code: 0, stdout: 'psql (PostgreSQL) 13.11' },
+  }), { depth: DEPTH.FULL });
+  const f = s.findings.find((x) => x.check === 'postgres');
+  assert.equal(f.id, 'postgres');
+  assert.deepEqual(f.remedy.argv, ['gitlab-ctl', 'pg-upgrade']);
+});
+
+test('нечитаемый gitlab.rb не выдаётся за встроенную БД', async () => {
+  // Под обычным пользователем gitlab.rb не прочитать — но и врать про
+  // встроенную нельзя: решает второй признак, служба в gitlab-ctl.
+  const { detectPostgres } = await import('../src/detect/services.js');
+  const exec = createExec({
+    mode: MODE.REPLAY,
+    fixtures: { ...checkFixtures(), [PG_RB]: { code: 2, stdout: '' }, 'gitlab-ctl status': { code: 1, stdout: '' } },
+  });
+  const where = await detectPostgres(exec);
+  assert.equal(where.bundled, null, 'неизвестность — это null, а не «встроенная»');
+});

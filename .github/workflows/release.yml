@@ -52,7 +52,16 @@ jobs:
           body: |
             ## Установка
 
-            Один файл, без `npm install` и без `node_modules`. Нужен только Node ≥ 20.
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/setup.sh | sh
+            ```
+
+            Установщик сверяет контрольную сумму до того, как файл попадёт в PATH,
+            и уважает `HTTPS_PROXY`. Понимает `--version`, `--dir`, `--dry-run`
+            и `--uninstall`.
+
+            Вручную — один файл, без `npm install` и без `node_modules`.
+            Нужен только Node ≥ 20.
 
             ```bash
             curl -fsSLO https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}/gitlab-upgrade.mjs
@@ -65,6 +74,7 @@ jobs:
             Если у сервера нет доступа наружу — скачайте на машине, где он есть, и скопируйте
             файл через `scp`. Прокси нужен инструменту только для `packages.gitlab.com`.
           files: |
+            setup.sh
             dist/gitlab-upgrade.mjs
             dist/gitlab-upgrade.mjs.sha256
             dist/gitlab-upgrade-src.tar.gz

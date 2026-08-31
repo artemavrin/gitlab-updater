@@ -431,5 +431,8 @@
   "source.default": "умолчание",
   "check.apt-no-repo.title": "apt через прокси",
   "check.apt-no-repo.critical": "репозиторий GitLab не подключён к apt — дело не в прокси",
-  "remedy.add-repo": "подключить репозиторий по официальной инструкции"
+  "remedy.add-repo": "подключить репозиторий по официальной инструкции",
+  "check.postgres-external.title": "PostgreSQL",
+  "check.postgres-external.critical": "версия {have}, а {target} требует не ниже {need} — база внешняя, gitlab-ctl pg-upgrade к ней неприменим",
+  "remedy.pg-external": "обновить внешнюю базу так, как описано у её поставщика, затем выполнить ANALYZE и перезапустить GitLab"
 }

@@ -68,6 +68,8 @@ export function checkFixtures({ migrations = '0 0', pg = 'psql (PostgreSQL) 15.6
     'fuser /var/lib/dpkg/lock-frontend': { code: 1, stdout: '' },
     'systemctl is-active apt-daily.timer': { code: 3, stdout: 'inactive' },
     'gitlab-psql --version': { code: 0, stdout: pg },
+    // Встроенный PostgreSQL: строки postgresql['enable'] в gitlab.rb нет.
+    "grep -E ^\\s*postgresql\\['enable'\\] /etc/gitlab/gitlab.rb": { code: 1, stdout: '' },
     ...extra,
   };
 }

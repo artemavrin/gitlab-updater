@@ -29,6 +29,11 @@ jobs:
       - name: Линт
         run: npm run lint
 
+      - name: Установщик — корректный POSIX sh
+        # Этот файл вливают в sh с чужой машины: он обязан хотя бы
+        # разбираться тем же sh, что стоит на Ubuntu (dash, а не bash).
+        run: sh -n setup.sh
+
       - name: Тесты
         run: npm test
 

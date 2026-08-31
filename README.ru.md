@@ -20,7 +20,15 @@ English: [README.md](README.md)
 
 ## Установка
 
-Один файл. Ни `npm install`, ни `node_modules` на сервере — нужен только Node ≥ 20.
+```bash
+curl -fsSL https://raw.githubusercontent.com/artemavrin/gitlab-updater/main/setup.sh | sh
+```
+
+Установщик сверяет контрольную сумму до того, как файл попадёт в `PATH`, уважает `HTTPS_PROXY` и ставит в `/usr/local/bin` — или в `~/.local/bin`, если вы не root. Понимает `--version`, `--dir`, `--proxy`, `--dry-run` и `--uninstall`.
+
+Про способ «влить скрипт в шелл» стоит сказать прямо, что здесь вас защищает. Скрипт целиком завёрнут в функцию, которая вызывается последней строкой: оборванное соединение не выполнит половину установки. Скачанный файл сверяется с опубликованным `.sha256`, и несовпадение — отказ, а не предупреждение. Обе ветки покрыты тестами. Если хочется сначала прочитать: [`setup.sh`](setup.sh).
+
+Либо вручную — один файл, без `npm install` и без `node_modules` на сервере. Нужен только Node ≥ 20.
 
 ```bash
 curl -fsSLO https://github.com/artemavrin/gitlab-updater/releases/latest/download/gitlab-upgrade.mjs

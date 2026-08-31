@@ -70,6 +70,8 @@ export const REMEDIES = {
   // Только для встроенного PostgreSQL: для внешнего процедура другая, и
   // текст починки это называет прямо.
   'postgres.critical': run('pg-upgrade', ['gitlab-ctl', 'pg-upgrade'], DOCS.pg),
+  // Внешняя БД: команда GitLab тут не поможет, а на Patroni/HA навредит.
+  'postgres-external.critical': read('pg-external', DOCS.pgExternal),
 
   'os-ceiling.warn': flag('safe-for-os', '--safe-for-os', DOCS.os),
   'session.warn': flag('detach', '--detach'),

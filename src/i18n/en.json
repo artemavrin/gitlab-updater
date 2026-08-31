@@ -430,5 +430,8 @@
   "source.default": "default",
   "check.apt-no-repo.title": "apt via proxy",
   "check.apt-no-repo.critical": "the GitLab repository is not configured in apt — this is not a proxy problem",
-  "remedy.add-repo": "add the repository as the official instructions describe"
+  "remedy.add-repo": "add the repository as the official instructions describe",
+  "check.postgres-external.title": "PostgreSQL",
+  "check.postgres-external.critical": "version {have}, and {target} requires {need} or newer — the database is external, so gitlab-ctl pg-upgrade does not apply",
+  "remedy.pg-external": "upgrade the external database the way its provider documents, then run ANALYZE and restart GitLab"
 }
