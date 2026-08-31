@@ -301,7 +301,7 @@
   "event.predownload.name": "package predownload",
   "event.predownload.running": "running",
   "event.predownload.done": "{count} package(s) cached",
-  "event.predownload.step": "downloaded {version}",
+  "event.predownload.step": "fetched {version} · {took}",
   "event.services.name": "services",
   "event.services.value": "{running}/{total} running",
   "event.migrations.name": "background migrations",
@@ -509,5 +509,10 @@
   "check.apt-refresh.ok": "apt-get update works through the proxy: {host} answers",
   "check.apt-refresh.critical": "apt-get update does not work through the proxy: {detail}",
   "check.apt-unsigned.title": "repository signature",
-  "check.apt-unsigned.critical": "the route works, but the signature cannot be verified: {detail}"
+  "check.apt-unsigned.critical": "the route works, but the signature cannot be verified: {detail}",
+  "event.predownload.at": "{index}/{of} · {version}",
+  "event.predownload.percent": "{index}/{of} · {version} · {percent}%",
+  "event.predownload.what": "{index}/{of} · {what} · {percent}%",
+  "event.install.download": "{version} · downloading {percent}%",
+  "event.install.install": "{version} · {note} · {percent}%"
 }

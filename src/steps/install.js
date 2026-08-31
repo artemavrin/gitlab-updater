@@ -1,4 +1,5 @@
 import { APT_NONINTERACTIVE, DPKG_KEEP_CONF, aptArgv } from '../net/aptProxy.js';
+import { STATUS_FD, aptWatcher } from './aptProgress.js';
 
 /**
  * Установка конкретной версии пакета.
@@ -50,7 +51,13 @@ export async function updateLists(exec, confPath, {
 export async function installVersion({ exec, bus, pkg, version, confPath }) {
   bus?.emit({ t: 'install:start', pkg, version });
   const started = Date.now();
-  const r = await exec(installArgv(pkg, version, confPath), {
+  const r = await exec([...installArgv(pkg, version, confPath), ...STATUS_FD], {
+    // Установка GitLab — это загрузка, распаковка и reconfigure, каждая
+    // молчала бы минутами. Показываем этап и процент, пока apt их даёт.
+    onLine: aptWatcher((p) => {
+      if (p.kind === 'fetched') return;
+      bus?.emit({ t: 'install:progress', version, stage: p.kind, percent: p.percent, note: p.note });
+    }),
     env: APT_NONINTERACTIVE,
     timeout: 4 * 3600_000,
   });
@@ -66,9 +73,20 @@ export async function installVersion({ exec, bus, pkg, version, confPath }) {
 export async function predownload({ exec, bus, pkg, versions, confPath }) {
   bus?.emit({ t: 'predownload:start', count: versions.length });
   const started = Date.now();
-  for (const version of versions) {
-    await exec(downloadArgv(pkg, version, confPath), { env: APT_NONINTERACTIVE, timeout: 2 * 3600_000 });
-    bus?.emit({ t: 'predownload:step', version });
+  for (const [i, version] of versions.entries()) {
+    const at = { index: i + 1, of: versions.length, version };
+    // Номер шага — до загрузки, а не после: девятнадцать пакетов по гигабайту
+    // качаются часами, и «идёт» без указания, что именно, не отличимо от
+    // зависания.
+    bus?.emit({ t: 'predownload:step', ...at });
+    const stepStarted = Date.now();
+    await exec([...downloadArgv(pkg, version, confPath), ...STATUS_FD], {
+      env: APT_NONINTERACTIVE, timeout: 2 * 3600_000,
+      onLine: aptWatcher((p) => {
+        if (p.kind === 'download') bus?.emit({ t: 'predownload:progress', ...at, percent: p.percent, what: p.what });
+      }),
+    });
+    bus?.emit({ t: 'predownload:got', ...at, durationMs: Date.now() - stepStarted });
   }
   const durationMs = Date.now() - started;
   bus?.emit({ t: 'predownload:done', count: versions.length, durationMs });

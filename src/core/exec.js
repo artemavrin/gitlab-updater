@@ -39,7 +39,7 @@ export function createExec({ mode = MODE.REAL, fixtures = null, bus = null, secr
     if (!Array.isArray(argv) || argv.length === 0) {
       throw new TypeError('exec requires a non-empty argv array');
     }
-    const { readOnly = false, timeout = 60_000, env, cwd, input, allowFailure = false } = opts;
+    const { readOnly = false, timeout = 60_000, env, cwd, input, allowFailure = false, onLine = null } = opts;
     const safe = redactArgv(argv, secrets);
     const started = Date.now();
 
@@ -78,13 +78,27 @@ export function createExec({ mode = MODE.REAL, fixtures = null, bus = null, secr
       let stderr = '';
       let timedOut = false;
 
+      // Построчная выдача по ходу дела. Без неё длинная команда — чёрный ящик:
+      // apt качает гигабайты и молчит до конца, а человек смотрит на статичный
+      // экран и не знает, идёт ли что-нибудь вообще.
+      const feed = (() => {
+        if (!onLine) return null;
+        const tail = { out: '', err: '' };
+        return (chunk, where) => {
+          tail[where] += chunk;
+          const parts = tail[where].split('\n');
+          tail[where] = parts.pop() ?? '';
+          for (const l of parts) if (l.trim()) onLine(l, where);
+        };
+      })();
+
       const timer = setTimeout(() => {
         timedOut = true;
         child.kill('SIGKILL');
       }, timeout);
 
-      child.stdout.on('data', (d) => { stdout += d; });
-      child.stderr.on('data', (d) => { stderr += d; });
+      child.stdout.on('data', (d) => { stdout += d; feed?.(String(d), 'out'); });
+      child.stderr.on('data', (d) => { stderr += d; feed?.(String(d), 'err'); });
       child.on('error', (err) => { clearTimeout(timer); reject(err); });
       child.on('close', (code) => {
         clearTimeout(timer);

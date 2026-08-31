@@ -71,13 +71,21 @@ export function describe(e, t) {
 
     case 'install:start':
       return phase(ROLE.INFO, p('event.install.name'), p('event.install.running'));
+    case 'install:progress':
+      return phase(ROLE.INFO, p('event.install.name'), p(`event.install.${e.stage}`));
     case 'install:done':
       return phase(ROLE.OK, p('event.install.name'), `${e.version} · ${t('event.took', { n: minutes(e.durationMs) })}`);
 
     case 'predownload:start':
       return phase(ROLE.INFO, p('event.predownload.name'), p('event.predownload.running'));
     case 'predownload:step':
-      return line(KIND.DETAIL, ROLE.INFO, p('event.predownload.step'));
+      return phase(ROLE.INFO, p('event.predownload.name'), p('event.predownload.at'));
+    case 'predownload:progress':
+      return phase(ROLE.INFO, p('event.predownload.name'),
+        e.what ? p('event.predownload.what') : p('event.predownload.percent'));
+    case 'predownload:got':
+      return line(KIND.DETAIL, ROLE.OK,
+        t('event.predownload.step', { version: e.version, took: t('event.took', { n: minutes(e.durationMs) }) }));
     case 'predownload:done':
       return phase(ROLE.OK, p('event.predownload.name'), p('event.predownload.done'));
 
