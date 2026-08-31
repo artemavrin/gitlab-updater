@@ -35,7 +35,14 @@ jobs:
           tag="${{ github.event.inputs.tag || github.ref_name }}"
           pkg="v$(node -p "require('./package.json').version")"
           echo "tag $tag, package.json $pkg"
-          test "$tag" = "$pkg"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::The tag and package.json disagree: $tag vs $pkg."
+            echo "::error::Publishing would ship a bundle whose --version does not match its own release page."
+            echo "::error::Bump package.json to ${tag#v}, push it, then move the tag onto that commit:"
+            echo "::error::  git tag -d $tag && git push origin :refs/tags/$tag"
+            echo "::error::  git tag -a $tag -m 'gitlab-upgrade ${tag#v}' && git push origin $tag"
+            exit 1
+          fi
 
       - name: Build the single file
         run: npm run build
