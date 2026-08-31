@@ -160,8 +160,8 @@ export const CHECKS = [
       const have = parsePgVersion(r.stdout);
       if (r.code !== 0 || !have) return warn('postgres-unknown');
       const range = postgresRange(data.pgRequirements, plan.target);
-      // Ниже GitLab 16 официальная таблица не публикуется — там PostgreSQL
-      // приезжает вместе с Omnibus, и проверять нечего.
+      // Ниже 14.0 требований не ставим: подъём начинается с остановки, где
+      // PostgreSQL уже 12. Выше — таблица есть для каждой мажорной версии.
       if (!range) return ok('postgres', { have });
       if (comparePg(have, range.min) < 0) {
         // Для внешней БД `gitlab-ctl pg-upgrade` не применяется, а на

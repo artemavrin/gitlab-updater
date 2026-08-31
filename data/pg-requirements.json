@@ -1,8 +1,10 @@
 {
-  "source": "https://docs.gitlab.com/install/requirements/",
+  "source": "https://docs.gitlab.com/install/requirements/ (16.x и выше), https://docs.gitlab.com/administration/package_information/postgresql_versions/ (14.x и 15.x)",
   "verified_at": "2026-08-31",
-  "note": "Диапазон поддерживаемых версий PostgreSQL по версии GitLab. Ниже GitLab 16 официальная таблица требований не публикуется, и мы не проверяем: там PostgreSQL приходит вместе с Omnibus.",
+  "note": "Диапазон поддерживаемых версий PostgreSQL по версии GitLab. Таблица «Minimum PostgreSQL version» в install/requirements начинается с 16.x. Для 14.x и 15.x границы взяты из таблицы версий пакета: она про Omnibus, то есть ровно про то, чем занят этот инструмент. Ниже 14.0 требований не ставим: подъём начинается с остановки, где PostgreSQL уже 12.",
   "ranges": {
+    "14.0": { "min": "12.7", "max": "13" },
+    "15.0": { "min": "12.10", "max": "13" },
     "16.0": { "min": "13.6", "max": "15" },
     "17.0": { "min": "14.14", "max": "16" },
     "18.0": { "min": "16.5", "max": "17" },

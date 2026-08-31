@@ -80,3 +80,33 @@ test('потолки ОС не ниже того, что реально опуб
   assert.ok(matrix.source, 'у данных должен быть указан источник');
   assert.ok(matrix.verified_at, 'и дата сверки');
 });
+
+/**
+ * Требования PostgreSQL сверены с двумя официальными таблицами, и обе нужны.
+ *
+ * «Minimum PostgreSQL version» в install/requirements начинается с 16.x —
+ * для 14.x и 15.x там ничего нет. Но у пользователя, поднимающегося с 13.x,
+ * первый же жёсткий барьер стоит на 14.0: PostgreSQL 11 туда не пускает
+ * («HA installations with repmgr… prevented from upgrading»), и без этой
+ * строки инструмент молчал бы до самого отказа установки пакета.
+ *
+ * Источник для 14.x и 15.x — таблица версий пакета
+ * (doc/administration/package_information/postgresql_versions.md), сверено по
+ * тегам v17.11.6-ee и v19.1.7-ee: там эти числа совпадают.
+ */
+test('требования PostgreSQL закрывают и путь с 13.x, и текущие версии', async () => {
+  const pg = JSON.parse(readFileSync('data/pg-requirements.json', 'utf8'));
+  const { postgresRange } = await import('../src/plan/matrices.js');
+
+  // Первая остановка после 13.12 — 14.0, и она требует PostgreSQL 12.7.
+  assert.equal(postgresRange(pg, '14.0.12-ee.0').min, '12.7');
+  assert.equal(postgresRange(pg, '14.10.5-ee.0').min, '12.7');
+  assert.equal(postgresRange(pg, '15.11.13-ee.0').min, '12.10');
+  // Текущие версии — из таблицы requirements, слово в слово.
+  assert.equal(postgresRange(pg, '16.11.10-ee.0').min, '13.6');
+  assert.equal(postgresRange(pg, '17.11.6-ee.0').min, '14.14');
+  assert.equal(postgresRange(pg, '18.11.11-ee.0').min, '16.5');
+  // Ниже 14.0 требований нет: подъём начинается там, где PostgreSQL уже 12.
+  assert.equal(postgresRange(pg, '13.12.15-ee.0'), null);
+  assert.ok(pg.source.includes('postgresql_versions'), 'второй источник должен быть назван');
+});
