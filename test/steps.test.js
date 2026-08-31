@@ -5,6 +5,24 @@ import { skipList, backupArgv, runBackup, COMPONENTS, MODE as BACKUP, CONFIG_FIL
 import { installArgv, downloadArgv, holdArgv, unholdArgv } from '../src/steps/install.js';
 import { waitServices, waitMigrations, MigrationsFailed, rateOf, etaMinutes, MIGRATION_QUERY, parseMigrationCounts } from '../src/steps/settle.js';
 import { ctlStatusHealthy, ctlStatusDegraded } from './fixtures/index.js';
+import { execFileSync } from 'node:child_process';
+
+/**
+ * Ruby на машине или нет — и ничего больше.
+ *
+ * Раньше здесь стоял `try { … } catch { return; }`, и он проглотил
+ * ReferenceError от невставленного импорта: тесты «проходили» за 0.14 мс, не
+ * запустив ruby ни разу. Пропуск обязан ловить ровно отсутствие бинаря, иначе
+ * это не пропуск, а зелёная галочка вместо проверки.
+ */
+function rubyMissing() {
+  try {
+    return execFileSync('ruby', ['-e', 'print 1'], { encoding: 'utf8' }) !== '1';
+  } catch (e) {
+    if (e.code === 'ENOENT') return true;
+    throw e;
+  }
+}
 
 /**
  * Инвариант, который нельзя нарушить ни в одном режиме: бэкап без базы
@@ -186,20 +204,32 @@ test('темп считается по окну, а не по всей исто�
 /**
  * Запрос о миграциях сверен с исходниками GitLab, а не написан по памяти.
  *
- * `scope :failed` в модели BatchedMigration не существует ни в одной версии с
- * 14.10 по 19.1 — есть только состояние `state :failed, value: 4`, а сам
- * GitLab пишет `with_status(:failed)`. Пока здесь стоял `m.failed`, запрос
- * падал с NoMethodError на любой версии: `doctor` всегда говорил «состояние
- * определить не удалось», а `run` после каждого шага 72 часа опрашивал
- * сломанный запрос вместо ожидания миграций.
+ * Дважды был неверен по одной и той же причине — «этот scope, кажется, есть
+ * везде»:
  *
- * Источник: lib/gitlab/database/background_migration/batched_migration.rb.
+ * * `m.failed` — scope с таким именем не существует ни в state_machine-эпохе
+ *   (там `with_status(:failed)`), но в enum-эпохе 13.11–13.12 он как раз есть:
+ *   Rails-enum сам заводит scope на каждое значение. То есть верны оба вызова,
+ *   но каждый в свою эпоху.
+ * * `m.queued` — появился только в 14.0. В 13.11 и 13.12 у модели один scope,
+ *   queue_order, и запрос падал с NoMethodError на всём пути с 13.x.
+ *
+ * Поэтому в запросе стоят оба варианта под respond_to?, а не один «правильный».
+ * Что они действительно исполняются, проверяет тест ниже — настоящим Ruby на
+ * заглушках трёх эпох.
+ *
+ * Сверено по тегам v13.0.14-ee, v13.11.7-ee, v13.12.15-ee, v14.0.12-ee,
+ * v16.11.10-ee, v19.1.7-ee.
  */
-test('запрос о миграциях не вызывает scope, которого в GitLab нет', () => {
-  assert.match(MIGRATION_QUERY, /with_status\(:failed\)/);
-  assert.ok(!/\bm\.failed\b/.test(MIGRATION_QUERY), 'scope :failed не существует ни в одной версии');
-  // `queued` — настоящий scope (with_statuses(:active, :paused)), он есть везде.
-  assert.match(MIGRATION_QUERY, /m\.queued\.count/);
+test('запрос о миграциях учитывает обе смены API, а не одну', () => {
+  // Ни один из двух вариантов не должен вызываться без проверки: голый вызов
+  // и есть тот дефект, который дважды ломал проверку целиком.
+  assert.match(MIGRATION_QUERY, /respond_to\?\(:queued\) \? m\.queued\.count : \(m\.active\.count \+ m\.paused\.count\)/);
+  assert.match(MIGRATION_QUERY, /respond_to\?\(:with_status\) \? m\.with_status\(:failed\)\.count : m\.failed\.count/);
+  // Старая очередь Sidekiq — единственный механизм на 13.0–13.10.
+  assert.match(MIGRATION_QUERY, /Gitlab::BackgroundMigration/);
+  // Сломанный вызов не должен становиться тихим «миграций нет».
+  assert.match(MIGRATION_QUERY, /raise if e\.is_a\?\(NoMethodError\)/);
 });
 
 test('упавшие миграции останавливают ожидание, а не молчат', async () => {
@@ -243,4 +273,69 @@ test('запрос о миграциях работает и там, где Batc
   // NoMethodError наследуется от NameError: без этой строки сломанный вызов
   // стал бы тихим «0 0», то есть «миграций нет».
   assert.match(MIGRATION_QUERY, /raise if e\.is_a\?\(NoMethodError\)/);
+});
+
+/**
+ * Запрос о миграциях проверяется настоящим Ruby на заглушках трёх эпох модели.
+ *
+ * Иначе проверять нечем: инстанса GitLab нет, а строка запроса — единственное
+ * место в проекте, которое исполняется чужим интерпретатором. Одна опечатка
+ * здесь стоила бы всей проверки миграций, и ровно это уже случилось дважды:
+ * `m.failed` не существовал никогда, а `m.queued` появился только в 14.0 —
+ * на 13.11 и 13.12 запрос падал с NoMethodError.
+ *
+ * Заглушки повторяют API из исходников GitLab по тегам, а не выдуманы.
+ */
+const RUBY_ERAS = [
+  {
+    name: '13.11–13.12: Rails-enum, есть active/paused/failed, queued нет',
+    stub: `module Gitlab; module Database; module BackgroundMigration
+      class BatchedMigration
+        def self.active; Struct.new(:count).new(2); end
+        def self.paused; Struct.new(:count).new(1); end
+        def self.failed; Struct.new(:count).new(0); end
+      end
+    end; end; end
+    module Gitlab; module BackgroundMigration; def self.remaining; 5; end; end; end`,
+    expect: '8 0 batched,legacy',
+  },
+  {
+    name: '14.0 и выше: state_machine, есть queued и with_status',
+    stub: `module Gitlab; module Database; module BackgroundMigration
+      class BatchedMigration
+        def self.queued; Struct.new(:count).new(7); end
+        def self.with_status(s); raise "unexpected status" unless s == :failed; Struct.new(:count).new(3); end
+      end
+    end; end; end
+    module Gitlab; module BackgroundMigration; def self.remaining; 0; end; end; end`,
+    expect: '7 3 batched,legacy',
+  },
+  {
+    name: 'до 13.11: класса нет, только очередь Sidekiq',
+    stub: 'module Gitlab; module BackgroundMigration; def self.remaining; 4; end; end; end',
+    expect: '4 0 legacy',
+  },
+];
+
+test('запрос о миграциях исполняется на всех трёх версиях модели', () => {
+  if (rubyMissing()) return;
+  for (const era of RUBY_ERAS) {
+    const out = execFileSync('ruby', ['-e', `${era.stub}\n${MIGRATION_QUERY}`], { encoding: 'utf8' }).trim();
+    assert.equal(out, era.expect, era.name);
+    const counts = parseMigrationCounts(out);
+    assert.ok(counts, `${era.name}: разбор ответа не должен давать null`);
+  }
+});
+
+test('неизвестная смена API падает громко, а не отвечает «миграций нет»', () => {
+  if (rubyMissing()) return;
+  // Класс есть, но ни queued, ни active: так выглядит очередная смена API.
+  // Тихое «0 0» здесь означало бы «можно продолжать» — худший из ответов.
+  const stub = `module Gitlab; module Database; module BackgroundMigration
+    class BatchedMigration; end
+  end; end; end`;
+  assert.throws(
+    () => execFileSync('ruby', ['-e', `${stub}\n${MIGRATION_QUERY}`], { stdio: 'pipe' }),
+    (e) => /NoMethodError/.test(String(e.stderr)),
+  );
 });

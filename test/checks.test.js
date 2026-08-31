@@ -325,3 +325,48 @@ test('нечитаемый gitlab.rb не выдаётся за встроенн
   const where = await detectPostgres(exec);
   assert.equal(where.bundled, null, 'неизвестность — это null, а не «встроенная»');
 });
+
+/**
+ * Настоящий инстанс: 13.12.15 на PostgreSQL 12.6, путь в девятнадцать шагов.
+ *
+ * Требование конечной 18.11 — PostgreSQL 16.5, и по нему проверка выдавала
+ * критическую находку, то есть запрещала подъём целиком. Это неверно дважды:
+ * первые десять шагов на PostgreSQL 12 проходятся штатно, а `pg-upgrade` на
+ * 13.12 не даёт 16.5 ни при каких условиях — нужные версии приносят сами
+ * пакеты по пути. Барьер надо называть там, где он стоит.
+ */
+const LONG_ROUTE = ['14.0.12-ee.0', '14.10.5-ee.0', '15.11.13-ee.0', '16.11.10-ee.0',
+  '17.1.8-ee.0', '17.11.7-ee.0', '18.11.11-ee.0'];
+
+test('на длинном пути PostgreSQL сверяется с шагом, а не только с концом', async () => {
+  const ctx = base({
+    plan: {
+      steps: LONG_ROUTE.map((raw) => ({ raw })),
+      target: { major: 18, minor: 11, patch: 11, raw: '18.11.11-ee.0' },
+    },
+  }, { 'gitlab-psql --version': { code: 0, stdout: 'psql (PostgreSQL) 12.6' } });
+  const f = byId((await runChecks(ctx, { depth: DEPTH.FULL })).findings, 'postgres');
+
+  // Предупреждение, а не стоп: подъём можно начинать сегодня.
+  assert.equal(f.level, LEVEL.WARN);
+  // Барьер — 16.11: это первый шаг, где начинается таблица требований (13.6).
+  assert.equal(f.params.target, '16.11.10-ee.0');
+  assert.equal(f.params.need, '13.6');
+  assert.equal(f.params.step, 4);
+  // И у предупреждения обязана быть починка: без неё это просто тревога.
+  assert.ok(f.remedy, 'починка нужна и для отложенного барьера');
+});
+
+test('барьер на первом же шаге остаётся стопом', async () => {
+  // Здесь пакет действительно не установится, и начинать нечего.
+  const ctx = base({
+    plan: {
+      steps: [{ raw: '17.1.8-ee.0' }, { raw: '17.11.7-ee.0' }],
+      target: { major: 17, minor: 11, patch: 7, raw: '17.11.7-ee.0' },
+    },
+  }, { 'gitlab-psql --version': { code: 0, stdout: 'psql (PostgreSQL) 13.6' } });
+  const f = byId((await runChecks(ctx, { depth: DEPTH.FULL })).findings, 'postgres');
+  assert.equal(f.level, LEVEL.CRITICAL);
+  assert.equal(f.params.step, 1);
+  assert.equal(f.params.need, '14.14');
+});

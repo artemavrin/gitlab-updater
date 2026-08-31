@@ -50,3 +50,15 @@ test('потолок ОС — это вся минорная серия, а не
   // Нет потолка — нет ограничения.
   assert.equal(withinCeiling(parseVersion('99.0.0'), null), true);
 });
+
+test('неразобранная версия — ошибка сравнения, а не «равно всему»', () => {
+  // NaN в цепочке `||` ложен, поэтому `undefined - 16 || undefined - 0 || 0 - 0`
+  // доходило до нуля: объект без major оказывался равен любой версии. Один раз
+  // из-за этого здоровому инстансу потребовали PostgreSQL 17 — подошёл весь
+  // диапазон требований, и выиграла последняя строка таблицы.
+  assert.throws(() => compareVersions({ raw: '17.11.6-ee.0' }, parseVersion('16.0')), TypeError);
+  assert.throws(() => compareVersions(parseVersion('16.0'), { major: 17 }), TypeError);
+  // Строку разбираем сами, а отсутствующий patch — законен.
+  assert.equal(compareVersions('17.11.6-ee.0', parseVersion('16.0')) > 0, true);
+  assert.equal(compareVersions(parseVersion('16.11'), parseVersion('16.11.0')), 0);
+});

@@ -159,18 +159,36 @@ export const CHECKS = [
       const r = await exec(['gitlab-psql', '--version'], { readOnly: true, allowFailure: true });
       const have = parsePgVersion(r.stdout);
       if (r.code !== 0 || !have) return warn('postgres-unknown');
-      const range = postgresRange(data.pgRequirements, plan.target);
-      // Ниже 14.0 требований не ставим: подъём начинается с остановки, где
-      // PostgreSQL уже 12. Выше — таблица есть для каждой мажорной версии.
-      if (!range) return ok('postgres', { have });
-      if (comparePg(have, range.min) < 0) {
+      // Требование ищем по шагам, а не только по конечной цели.
+      //
+      // На пути с 13.x девятнадцать шагов, и PostgreSQL обновляют у того
+      // барьера, где он нужен, а не заранее. Требование конечной 18.11 (PG
+      // 16.5) не мешает пройти первые десять шагов на PostgreSQL 12 — а
+      // критическая находка по конечной цели останавливала весь подъём и
+      // предлагала pg-upgrade, который на 13.12 всё равно не даёт 16.5:
+      // нужную версию приносят сами пакеты по пути.
+      const steps = plan.steps?.length ? plan.steps : [plan.target];
+      const needFor = (v) => {
+        // Шаг может прийти и разобранной версией, и просто {raw}: сравнивать
+        // надо по строке, иначе объект без major сойдёт за любую версию.
+        const r = postgresRange(data.pgRequirements, v.raw ?? v);
+        return r && comparePg(have, r.min) < 0 ? r.min : null;
+      };
+      const at = steps.findIndex((step) => needFor(step) !== null);
+      if (at >= 0) {
         // Для внешней БД `gitlab-ctl pg-upgrade` не применяется, а на
         // Patroni/HA запрещён документацией. Находка отдельная — иначе
         // экран советует команду, которая ничего не сделает.
         const where = await detectPostgres(exec);
         const id = where.bundled === true ? 'postgres' : 'postgres-external';
-        return critical(id, { have, need: range.min, target: plan.target.raw });
+        const params = { have, need: needFor(steps[at]), target: steps[at].raw, step: at + 1 };
+        // Барьер на первом же шаге — стоп: этот пакет не установится. Барьер
+        // дальше по пути — предупреждение: подъём можно начинать сейчас.
+        return at === 0 ? critical(id, params) : warn(id, params);
       }
+      const range = postgresRange(data.pgRequirements, plan.target);
+      // Ниже 16 требований не ставим: там PostgreSQL приходит с Omnibus.
+      if (!range) return ok('postgres', { have });
       // Выше протестированного максимума — вопрос поддерживаемости, а не поломки,
       // поэтому предупреждение. Сравниваем по мажорной: максимум задан как «16».
       if (pgMajor(have) > pgMajor(range.max)) {

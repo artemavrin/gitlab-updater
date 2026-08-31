@@ -8,9 +8,17 @@ import { errorDetail } from '../core/exec.js';
  *
  * * `BatchedMigration` — появился в 13.11. Ниже него класса нет вовсе, и
  *   обращение к нему даёт NameError: на 13.0–13.10 проверка просто не могла
- *   работать. `queued` — настоящий scope (`with_statuses(:active, :paused)`),
- *   есть во всех версиях. А `failed` scope'ом не был никогда: сам GitLab
- *   пишет `with_status(:failed)`, в модели есть только `state :failed`.
+ *   работать. Внутри класс пережил две смены API, и путь с 13.x проходит через
+ *   обе: в 13.11–13.12 статусы объявлены Rails-enum, поэтому есть scope'ы
+ *   .active, .paused и .failed, а `queued` появился только в 14.0; позже enum
+ *   заменили на state_machine, per-state scope'ы исчезли, и упавшие считаются
+ *   через `with_status(:failed)`. А `failed` полноценным scope'ом не был
+ *   никогда: сам GitLab пишет `with_status(:failed)`.
+ *
+ *   Отсюда respond_to? на два известных перехода, а не номер версии: на длинном
+ *   пути версия инстанса меняется под нами девятнадцать раз, и один запрос,
+ *   который подстраивается сам, надёжнее девятнадцати верных догадок. Любой
+ *   другой NoMethodError по-прежнему поднимается дальше.
  * * `Gitlab::BackgroundMigration.remaining` — старые миграции в очереди
  *   Sidekiq. Есть с 13.0 по 17.11, в 19.x файла уже нет. С 13.x подниматься,
  *   не дождавшись их, нельзя — а до сих пор мы их не считали совсем.
@@ -24,13 +32,18 @@ import { errorDetail } from '../core/exec.js';
  * и это не то же самое, что «миграций нет».
  *
  * Источник: lib/gitlab/database/background_migration/batched_migration.rb и
- * lib/gitlab/background_migration.rb, сверено по тегам v13.0.14-ee … v19.1.7-ee.
+ * lib/gitlab/background_migration.rb, сверено по тегам v13.0.14-ee, v13.6.7-ee,
+ * v13.11.7-ee, v13.12.15-ee, v14.0.12-ee, v16.11.10-ee, v19.1.7-ee: scope
+ * :queued впервые встречается в 14.0, в 13.11 и 13.12 у модели есть только
+ * queue_order.
  */
 export const MIGRATION_QUERY = [
   'q = 0; f = 0; s = []',
   'begin;'
     + ' m = Gitlab::Database::BackgroundMigration::BatchedMigration;'
-    + ' q += m.queued.count; f += m.with_status(:failed).count; s << "batched";'
+    + ' q += m.respond_to?(:queued) ? m.queued.count : (m.active.count + m.paused.count);'
+    + ' f += m.respond_to?(:with_status) ? m.with_status(:failed).count : m.failed.count;'
+    + ' s << "batched";'
     + ' rescue NameError => e; raise if e.is_a?(NoMethodError); end',
   'begin;'
     + ' g = Gitlab::BackgroundMigration;'

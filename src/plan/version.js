@@ -18,11 +18,24 @@ export function parseVersion(input) {
 export const shortVersion = (v) => `${v.major}.${v.minor}${v.patch === null ? '' : `.${v.patch}`}`;
 export const minorOf = (v) => `${v.major}.${v.minor}`;
 
-/** Отрицательное — a < b. patch === null считается нулём. */
+/**
+ * Отрицательное — a < b. patch === null считается нулём.
+ *
+ * Объект без числовых major и minor — ошибка, а не «равно». Без этой проверки
+ * `undefined - 16` даёт NaN, NaN в цепочке `||` ложен, и выражение доходит до
+ * `0 - 0`, то есть до нуля: неразобранная версия оказывалась равной любой.
+ * Один раз это уже вылезло — диапазон PostgreSQL подошёл весь, и выиграл
+ * последний, потребовав от здорового инстанса версию 17.
+ */
 export function compareVersions(a, b) {
   const A = typeof a === 'string' ? parseVersion(a) : a;
   const B = typeof b === 'string' ? parseVersion(b) : b;
   if (!A || !B) throw new TypeError('cannot parse version');
+  for (const v of [A, B]) {
+    if (!Number.isFinite(v.major) || !Number.isFinite(v.minor)) {
+      throw new TypeError(`cannot compare version: ${JSON.stringify(v)}`);
+    }
+  }
   return A.major - B.major || A.minor - B.minor || (A.patch ?? 0) - (B.patch ?? 0);
 }
 
