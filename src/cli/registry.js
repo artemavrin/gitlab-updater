@@ -20,6 +20,8 @@ export const FLAGS = {
   proxy:             { type: 'string',  group: GROUP.NETWORK, value: 'url' },
   'proxy-ca':        { type: 'string',  group: GROUP.NETWORK, value: 'path' },
   'proxy-all-apt':   { type: 'boolean', group: GROUP.NETWORK },
+  'probe-host':      { type: 'string',  group: GROUP.NETWORK, value: 'host' },
+  'probe-timeout':   { type: 'string',  group: GROUP.NETWORK, value: 'ms' },
 
   'min-free-gb':     { type: 'string',  group: GROUP.TARGET,  value: 'number' },
   force:             { type: 'boolean', group: GROUP.TARGET },
@@ -148,7 +150,7 @@ export const COMMANDS = {
     mutating: false,
     // Диагностику запускают до того, как получили sudo, — иначе она бесполезна.
     requiresRoot: false,
-    flags: [...NETWORKING, ...COMMON],
+    flags: [...NETWORKING, 'probe-host', 'probe-timeout', ...COMMON],
     exits: { 0: 'ok', 1: 'proxy-unreachable' },
     result: { proxy: 'string', ok: 'number', warnings: 'number', critical: 'number', findings: 'array' },
   },

@@ -75,6 +75,8 @@
   "flag.proxy.desc": "прокси для packages.gitlab.com: http://… или socks5://…",
   "flag.proxy-ca.desc": "CA корпоративного прокси при TLS-перехвате",
   "flag.proxy-all-apt.desc": "проксировать все репозитории, а не только gitlab",
+  "flag.probe-host.desc": "проверять доступ к другому хосту, не к packages.gitlab.com",
+  "flag.probe-timeout.desc": "сколько ждать каждый рубеж, мс (по умолчанию 15000)",
   "flag.lang.desc": "язык интерфейса: ru или en",
   "flag.json.desc": "один JSON-документ с результатом на stdout",
   "flag.events.desc": "поток событий JSONL на stderr",

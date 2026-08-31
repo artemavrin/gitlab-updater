@@ -1,4 +1,5 @@
-import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { writeFileSync, mkdirSync, mkdtempSync, rmSync, accessSync, constants } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 export const GITLAB_REPO_HOST = 'packages.gitlab.com';
@@ -42,6 +43,38 @@ export function aptConfPath(stateDir, pid = process.pid) {
 
 export function removeAptConf(path) {
   rmSync(path, { force: true });
+}
+
+/**
+ * Готовый временный apt.conf и способ его убрать.
+ *
+ * Обычное место — stateDir, но писать туда может только root, а `proxy test`
+ * запускают до того, как получили sudo: диагностика, требующая прав, бесполезна
+ * ровно там, где она нужна. Если stateDir недоступен, уходим во временный
+ * каталог; права на файле те же 0600, пароль прокси защищён так же.
+ *
+ * Каталог именно mkdtemp, а не предсказуемый `/tmp/gitlab-upgrade-$UID`:
+ * по известному имени сосед по машине заранее подставил бы симлинк, и пароль
+ * прокси ушёл бы в файл, который он может прочитать.
+ */
+export function openAptConf({ stateDir, ...opts }) {
+  if (writableDir(stateDir)) {
+    const path = writeAptConf(aptConfPath(stateDir), opts);
+    return { path, cleanup: () => removeAptConf(path) };
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'gitlab-upgrade-'));
+  const path = writeAptConf(aptConfPath(dir), opts);
+  return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+function writableDir(dir) {
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    accessSync(dir, constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Готовая обёртка: apt-get -c <conf> ... в неинтерактивном режиме. */

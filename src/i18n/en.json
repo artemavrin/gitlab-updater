@@ -74,6 +74,8 @@
   "flag.proxy.desc": "proxy for packages.gitlab.com: http://… or socks5://…",
   "flag.proxy-ca.desc": "corporate proxy CA for TLS interception",
   "flag.proxy-all-apt.desc": "proxy every repository, not just gitlab",
+  "flag.probe-host.desc": "probe a different host instead of packages.gitlab.com",
+  "flag.probe-timeout.desc": "how long to wait per rung, ms (default 15000)",
   "flag.lang.desc": "interface language: ru or en",
   "flag.json.desc": "a single JSON result document on stdout",
   "flag.events.desc": "JSONL event stream on stderr",

@@ -28,7 +28,7 @@ import { hostname } from 'node:os';
 import { detectOs } from '../src/detect/os.js';
 import { detectGitlab } from '../src/detect/gitlab.js';
 import { EXIT } from '../src/plan/planner.js';
-import { writeAptConf, aptConfPath, removeAptConf } from '../src/net/aptProxy.js';
+import { openAptConf } from '../src/net/aptProxy.js';
 
 import pkg from '../package.json' with { type: 'json' };
 import upgradePath from '../data/upgrade-path.json' with { type: 'json' };
@@ -157,11 +157,15 @@ async function main(argv) {
   // передаваемый через `apt-get -c`, а не в /etc/apt/apt.conf.d/: после kill -9
   // система не остаётся перенастроенной, и пароль не виден в `ps aux`.
   let confPath = null;
+  let dropConf = null;
   if (config.proxy) {
     try {
-      confPath = writeAptConf(aptConfPath(config.stateDir), {
+      const conf = openAptConf({
+        stateDir: config.stateDir,
         proxy: config.proxy, all: config.proxyAllApt, ca: config.proxyCa ?? null,
       });
+      confPath = conf.path;
+      dropConf = conf.cleanup;
     } catch (err) {
       // Молча ходить мимо прокси нельзя: на закрытом контуре это тихий провал.
       const envelope = fail(command, {
@@ -209,7 +213,7 @@ async function main(argv) {
   } finally {
     // Экран гасим до печати итога: иначе <Static> допишет кадр поверх него.
     await screen?.stop();
-    if (confPath) removeAptConf(confPath);
+    dropConf?.();
     await notifier?.pending();
   }
 

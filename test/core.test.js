@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { redact, redactUrl } from '../src/core/redact.js';
 import { createExec, MODE, ExecError } from '../src/core/exec.js';
 import { EventBus } from '../src/core/events.js';
-import { renderAptConf } from '../src/net/aptProxy.js';
+import { renderAptConf, openAptConf } from '../src/net/aptProxy.js';
+import { mkdtempSync, writeFileSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
 import { parseProxy } from '../src/core/http.js';
 import { fixturesFor } from './fixtures/index.js';
 
@@ -70,4 +73,41 @@ test('разбор URL прокси даёт тип, порт и креды', ()
   assert.equal(parseProxy('http://10.0.0.5:8080').kind, 'http');
   assert.equal(parseProxy(null), null);
   assert.throws(() => parseProxy('ftp://x'), (e) => e.code === 'proxy-scheme' && e.params.scheme === 'ftp');
+});
+
+/**
+ * Каталог, в который нельзя писать никому.
+ *
+ * На настоящей машине это EACCES на /var/lib/gitlab-upgrade у обычного
+ * пользователя, но тесты бывают запущены и от root, для которого права 0500
+ * ничего не значат. Подкаталог внутри обычного файла недоступен любому uid,
+ * а `writableDir` обе причины обрабатывает одинаково.
+ */
+function unusableDir() {
+  const file = join(mkdtempSync(join(tmpdir(), 'locked-')), 'not-a-dir');
+  writeFileSync(file, 'x');
+  return join(file, 'gitlab-upgrade');
+}
+
+test('без прав на stateDir настройки прокси всё равно пишутся', () => {
+  // `proxy test` заявлен как команда без root — и запускают её именно до
+  // того, как получили sudo. До 0.1.1 она падала с EACCES на /var/lib,
+  // то есть диагностика была недоступна ровно там, где она нужна.
+  const conf = openAptConf({ stateDir: unusableDir(), proxy: 'socks5h://10.0.0.5:1080' });
+  assert.match(readFileSync(conf.path, 'utf8'), /10\.0\.0\.5/);
+  // Пароль прокси лежит в этом файле: права те же, что и в /var/lib.
+  assert.equal(statSync(conf.path).mode & 0o777, 0o600);
+  // Имя каталога случайное: по предсказуемому сосед по машине заранее
+  // подставил бы симлинк, и пароль ушёл бы в читаемый им файл.
+  assert.ok(!existsSync(join(tmpdir(), `gitlab-upgrade-${process.getuid?.() ?? 0}`)));
+  conf.cleanup();
+  assert.equal(existsSync(conf.path), false, 'после себя ничего не оставляем');
+});
+
+test('там, где stateDir доступен, файл ложится именно туда', () => {
+  const state = join(mkdtempSync(join(tmpdir(), 'state-')), 'gitlab-upgrade');
+  const conf = openAptConf({ stateDir: state, proxy: 'http://10.0.0.5:8080' });
+  assert.equal(dirname(conf.path), state);
+  conf.cleanup();
+  assert.equal(existsSync(conf.path), false);
 });
