@@ -4,7 +4,7 @@ Safe upgrades for self-managed **GitLab Omnibus** on Ubuntu and Debian — the r
 
 Русская версия: [README.ru.md](README.ru.md)
 
-> **Status: phases 0-3.** Detection, planning, readiness checks, backup, install, migration waiting, state, resume, notifications and detach all work and are covered by 192 offline tests. `run` changes the server; everything else is read-only.
+> **Status: phases 0-3.6.** Detection, planning, readiness checks, backup, install, migration waiting, state, resume, notifications, detach, the terminal screens and proxy diagnostics all work, covered by 266 offline tests. `run` changes the server; everything else is read-only. Not yet rehearsed against a live GitLab — see [rehearsal/](rehearsal/README.md).
 
 ## Why
 
@@ -56,9 +56,11 @@ A routine patch gets its own screen — no step counter, no path, no history. Tw
 ## Use
 
 ```bash
-sudo gitlab-upgrade check        # is there anything to upgrade? exit code says what kind
-sudo gitlab-upgrade plan         # full plan, changes nothing
-sudo gitlab-upgrade --lang en plan
+gitlab-upgrade check             # is there anything to upgrade? exit code says what kind
+gitlab-upgrade plan              # full plan, changes nothing
+gitlab-upgrade doctor            # readiness only, with the command that fixes each finding
+gitlab-upgrade proxy test        # where the chain to the repository breaks
+gitlab-upgrade --lang en plan
 ```
 
 `check` is built for cron and monitoring:
