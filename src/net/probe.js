@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { openSocket, parseProxy, request } from '../core/http.js';
 import { errorDetail } from '../core/exec.js';
 import { NetError, NET, netMessage } from '../core/netError.js';
-import { GITLAB_REPO_HOST } from './aptProxy.js';
+import { GITLAB_REPO_HOST, GITLAB_DOWNLOAD_HOST } from './aptProxy.js';
 import { LEVEL } from '../core/events.js';
 
 /**
@@ -168,6 +168,16 @@ export async function probeProxy({
     }
     add(fail('proxy-tls', { host, detail: why(err, t) }));
     return steps;
+  }
+
+  // Пакеты лежат не там, где индексы: packages.gitlab.com уводит за .deb
+  // редиректом на Google Storage. Прокси, настроенный на один хост, покрывает
+  // apt-get update и не покрывает ни одной загрузки — «всё в порядке» здесь
+  // было бы обещанием, которого проба не проверяла.
+  if (host === GITLAB_REPO_HOST) {
+    const ok2 = await tlsWorks({ proxy, host: GITLAB_DOWNLOAD_HOST, ca, timeout });
+    add((ok2 ? ok : fail)('proxy-downloads', { host: GITLAB_DOWNLOAD_HOST }));
+    if (!ok2) return steps;
   }
 
   try {

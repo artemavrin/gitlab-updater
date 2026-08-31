@@ -5,16 +5,33 @@ import { dirname, join } from 'node:path';
 export const GITLAB_REPO_HOST = 'packages.gitlab.com';
 
 /**
+ * Хост, на который packages.gitlab.com уводит за самими пакетами.
+ *
+ * Индексы (InRelease, Release, Packages.gz) отдаёт сам packages.gitlab.com, а
+ * .deb — редиректом на Google Storage. Проверено на 13.12.15, 14.0.12, 16.3.9,
+ * 17.11.7 и 18.11.11: все пять уходят на storage.googleapis.com.
+ *
+ * Из-за этого прокси «только на packages.gitlab.com» покрывает apt-get update
+ * и не покрывает ни одной загрузки: на закрытом контуре подъём проходил бы
+ * проверки, обновлял списки — и падал на первом же скачивании пакета.
+ */
+export const GITLAB_DOWNLOAD_HOST = 'storage.googleapis.com';
+
+/** Хосты, без которых apt не доберётся до пакетов GitLab. */
+export const REPO_HOSTS = [GITLAB_REPO_HOST, GITLAB_DOWNLOAD_HOST];
+
+/**
  * Настройки прокси для apt — во временный файл, а не в /etc/apt/apt.conf.d/.
  *
  * Три причины: kill -9 не оставляет систему перенастроенной; пароль прокси
  * не попадает в `ps aux` (в отличие от -o Acquire::...Proxy=...); и не лежит
  * в мировочитаемом каталоге. Файл создаётся с правами 0600.
  *
- * По умолчанию проксируем ТОЛЬКО packages.gitlab.com: на закрытом контуре
- * зеркало Ubuntu обычно внутреннее, и глобальный прокси сломал бы apt-get update.
+ * По умолчанию проксируем только репозиторий GitLab и хост, на который он
+ * уводит за пакетами: на закрытом контуре зеркало Ubuntu обычно внутреннее, и
+ * глобальный прокси сломал бы apt-get update.
  */
-export function renderAptConf({ proxy, hosts = [GITLAB_REPO_HOST], all = false, ca = null }) {
+export function renderAptConf({ proxy, hosts = REPO_HOSTS, all = false, ca = null }) {
   const lines = ['// создано gitlab-upgrade, временный файл'];
   if (proxy) {
     for (const scheme of ['http', 'https']) {

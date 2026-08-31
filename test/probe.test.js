@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import tls from 'node:tls';
 import { probeProxy, UBUNTU_HOST } from '../src/net/probe.js';
+import { GITLAB_REPO_HOST, GITLAB_DOWNLOAD_HOST } from '../src/net/aptProxy.js';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -384,4 +385,48 @@ test('скачанные списки без gitlab-ee — другой диаг
   // «причина не названа» — признание бесполезности; здесь причина есть.
   assert.notEqual(last.params.detail, t('probe.noDetail'));
   assert.match(last.params.detail, /gitlab-ee/);
+});
+
+/**
+ * Пакеты приходят не с того хоста, что индексы.
+ *
+ * packages.gitlab.com отдаёт InRelease, Release и Packages.gz сам, а за .deb
+ * уводит редиректом на Google Storage — проверено на 13.12.15, 14.0.12, 16.3.9,
+ * 17.11.7 и 18.11.11. Прокси «на один хост» покрывает apt-get update и не
+ * покрывает ни одной загрузки: на закрытом контуре подъём прошёл бы проверки,
+ * обновил списки и упал на первом же скачивании. Проба, которая этого не
+ * замечает, обещает то, чего не проверяла.
+ */
+test('доступность хоста загрузок проверяется отдельно от репозитория', async () => {
+  const cert = selfSignedFor(GITLAB_REPO_HOST);
+  if (!cert) return;
+  // Прокси, который пускает к индексам и рвёт всё остальное.
+  const proxy = fakeSocksCuttingTls({ serveTlsFor: GITLAB_REPO_HOST, key: cert.key, cert: cert.cert });
+  const port = await proxy.listen();
+  try {
+    const steps = await probeProxy({
+      proxyUrl: `socks5h://127.0.0.1:${port}`, t, timeout: 2000, ca: cert.caPath,
+    });
+    const downloads = at(steps, 'proxy-downloads');
+    assert.ok(downloads, 'рубеж хоста загрузок должен быть в отчёте');
+    assert.equal(downloads.level, LEVEL.CRITICAL);
+    assert.equal(downloads.params.host, GITLAB_DOWNLOAD_HOST);
+    // Дальше идти незачем: пакетов не будет при любом ответе следующих рубежей.
+    assert.equal(at(steps, 'proxy-http'), null);
+  } finally {
+    await new Promise((r) => proxy.server.close(r));
+    rmSync(cert.dir, { recursive: true, force: true });
+  }
+});
+
+test('конфиг apt проксирует и репозиторий, и хост загрузок', async () => {
+  const { renderAptConf, GITLAB_REPO_HOST: repo, GITLAB_DOWNLOAD_HOST: cdn } = await import('../src/net/aptProxy.js');
+  const conf = renderAptConf({ proxy: 'socks5h://10.0.0.5:1080' });
+  for (const scheme of ['http', 'https']) {
+    assert.match(conf, new RegExp(`Acquire::${scheme}::Proxy::${repo.replace(/\./g, '\\.')} `));
+    assert.match(conf, new RegExp(`Acquire::${scheme}::Proxy::${cdn.replace(/\./g, '\\.')} `));
+  }
+  // Глобальный прокси по-прежнему только по явной просьбе: внутреннее зеркало
+  // Ubuntu через него сломалось бы.
+  assert.ok(!/Acquire::http::Proxy "/.test(conf));
 });

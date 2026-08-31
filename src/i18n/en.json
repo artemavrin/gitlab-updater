@@ -501,5 +501,8 @@
   "check.notify-none.ok": "not configured — a failure will only show in attach",
   "check.notify-partial.warn": "half configured: {missing} is missing. The channel will never fire and will not say so",
   "remedy.notify-chat": "find the chat id and store it: the bot answers in that same chat",
-  "event.apt.locked": "apt is busy with another process, waiting: attempt {attempt} of {of}"
+  "event.apt.locked": "apt is busy with another process, waiting: attempt {attempt} of {of}",
+  "check.proxy-downloads.title": "download host",
+  "check.proxy-downloads.ok": "{host} is reachable through the proxy — the packages themselves come from there",
+  "check.proxy-downloads.critical": "{host} is unreachable through the proxy: indexes will refresh but packages come from there, so the first install will stall"
 }

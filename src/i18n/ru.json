@@ -502,5 +502,8 @@
   "check.notify-none.ok": "не настроены — о падении узнаете только из attach",
   "check.notify-partial.warn": "настроено наполовину: не хватает {missing}. Канал не сработает и не скажет об этом",
   "remedy.notify-chat": "узнать chat id и записать его: бот ответит в тот же чат",
-  "event.apt.locked": "apt занят другим процессом, жду: попытка {attempt} из {of}"
+  "event.apt.locked": "apt занят другим процессом, жду: попытка {attempt} из {of}",
+  "check.proxy-downloads.title": "хост загрузок",
+  "check.proxy-downloads.ok": "{host} доступен через прокси — оттуда приходят сами пакеты",
+  "check.proxy-downloads.critical": "{host} через прокси недоступен: индексы читаются, а пакеты качаются оттуда — установка встанет на первом же шаге"
 }
