@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, chownSync, symlinkSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -246,6 +246,34 @@ test('под sudo установка доходит до конца, а не о�
     }).catch((e) => ({ failed: true, code: e.code, stdout: e.stdout ?? '', stderr: e.stderr ?? '' }));
     assert.ok(!r.failed, `установка оборвалась: код ${r.code}\n${r.stderr}`);
     assert.ok(existsSync(join(dir, 'gitlab-upgrade')), 'файла нет, а ошибки не было — это и есть тихий обрыв');
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('root предупреждают, если Node лежит в чужом домашнем каталоге', async () => {
+  // root, запускающий интерпретатор из-под чужого uid, отдаёт root любому,
+  // кто может этот файл переписать. Отказывать не за что — админ тут обычно
+  // и есть тот пользователь, — но молчать об этом нельзя.
+  if (process.getuid?.() !== 0) return; // правило только для root, проверять нечего
+  const home = mkdtempSync(join(tmpdir(), 'home-'));
+  // Подставной интерпретатор, а не симлинк на настоящий: chown идёт по ссылке
+  // и сменил бы владельца системного node.
+  const fake = join(home, 'node');
+  writeFileSync(fake, '#!/bin/sh\ncase "$1" in -p) echo 20 ;; --version) echo v20.19.5 ;; esac\n');
+  chmodSync(fake, 0o755);
+  chownSync(fake, 65534, 65534); // nobody:nogroup
+  const { server, port } = await serve(assets(BUNDLE));
+  const dir = mkdtempSync(join(tmpdir(), 'setup-'));
+  try {
+    const r = await run('sh', ['setup.sh', '--base-url', `http://127.0.0.1:${port}`, '--dir', dir, '--node', fake],
+      { env: { ...process.env, HOME: home, HTTPS_PROXY: '', https_proxy: '' } });
+    assert.ok(existsSync(join(dir, 'gitlab-upgrade')), 'предупреждение не должно отменять установку');
+    assert.match(r.stderr, /принадлежит не root/);
+    // Предупреждение без выхода — это просто испуг.
+    assert.match(r.stderr, /nodejs\.org/);
   } finally {
     server.close();
     rmSync(dir, { recursive: true, force: true });

@@ -93,6 +93,7 @@ EOF
     install_file "$wrapper" "$target"
     say "установлено: $target"
     say "интерпретатор зафиксирован: $NODE ($("$NODE" --version))"
+    warn_user_owned_node
   else
     install_file "$tmp/$ASSET" "$target"
     say "установлено: $target"
@@ -202,6 +203,22 @@ choose_node() {
   err "  sudo tar -xJf node-v20.19.5-linux-x64.tar.xz -C /usr/local --strip-components=1"
   err "или укажите готовый: setup.sh --node /путь/к/node"
   exit 1
+}
+
+# Если root запускает интерпретатор из чужого домашнего каталога, то любой,
+# кто может писать по этому пути, получает root. Обычно это тот же админ, и
+# отказывать не за что, но знать об этом он должен.
+warn_user_owned_node() {
+  command -v stat >/dev/null 2>&1 || return 0
+  [ "$(id -u)" = 0 ] || return 0
+  owner="$(stat -c %u "$NODE" 2>/dev/null || echo 0)"
+  [ "$owner" = 0 ] && return 0
+  err "внимание: $NODE принадлежит не root (uid $owner)"
+  err "  root будет запускать этот файл — кто может его переписать, получит root"
+  err "  надёжнее поставить Node системно и переустановить:"
+  err "    curl -fsSLO https://nodejs.org/dist/v20.19.5/node-v20.19.5-linux-x64.tar.xz"
+  err "    sudo tar -xJf node-v20.19.5-linux-x64.tar.xz -C /usr/local --strip-components=1"
+  return 0
 }
 
 # Без root ставим в домашний каталог, а не падаем: инструмент часто сначала
