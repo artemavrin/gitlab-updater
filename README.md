@@ -64,12 +64,13 @@ A routine patch gets its own screen — no step counter, no path, no history. Tw
 ## Use
 
 ```bash
-gitlab-upgrade check             # is there anything to upgrade? exit code says what kind
-gitlab-upgrade plan              # full plan, changes nothing
-gitlab-upgrade doctor            # readiness only, with the command that fixes each finding
-gitlab-upgrade proxy test        # where the chain to the repository breaks
+sudo gitlab-upgrade check        # is there anything to upgrade? exit code says what kind
+sudo gitlab-upgrade plan         # full plan, changes nothing
+sudo gitlab-upgrade doctor       # readiness only, with the command that fixes each finding
 sudo gitlab-upgrade config set proxy socks5h://10.0.0.5:1080
-gitlab-upgrade --lang en plan
+
+gitlab-upgrade proxy test        # where the chain breaks — the one command that needs no root
+sudo gitlab-upgrade --lang en plan
 ```
 
 `check` is built for cron and monitoring:

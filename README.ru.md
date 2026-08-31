@@ -64,11 +64,12 @@ sudo install -m 0755 gitlab-upgrade.mjs /usr/local/bin/gitlab-upgrade
 ## Использование
 
 ```bash
-gitlab-upgrade check             # есть ли что обновить; код возврата говорит, какого рода
-gitlab-upgrade plan              # полный план, ничего не меняет
-gitlab-upgrade doctor            # только готовность, с командой починки у каждой находки
-gitlab-upgrade proxy test        # где рвётся цепочка до репозитория
+sudo gitlab-upgrade check        # есть ли что обновить; код возврата говорит, какого рода
+sudo gitlab-upgrade plan         # полный план, ничего не меняет
+sudo gitlab-upgrade doctor       # только готовность, с командой починки у каждой находки
 sudo gitlab-upgrade config set proxy socks5h://10.0.0.5:1080
+
+gitlab-upgrade proxy test        # где рвётся цепочка — единственная команда без root
 ```
 
 `check` сделан для крона и мониторинга:
