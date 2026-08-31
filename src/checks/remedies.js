@@ -81,6 +81,8 @@ export const REMEDIES = {
   'proxy-none.warn': flag('set-proxy', '--proxy'),
   'proxy-tls-intercepted.critical': flag('proxy-ca', '--proxy-ca'),
   'apt-repo.critical': run('apt-update', ['apt-get', 'update']),
+  // Единственная починка, которая здесь работает: списки надо скачать.
+  'apt-not-updated.critical': run('apt-update', ['apt-get', 'update']),
   'apt-no-repo.critical': read('add-repo', DOCS.install),
   'apt-direct.warn': flag('proxy-all-apt', '--proxy-all-apt'),
 };

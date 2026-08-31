@@ -337,3 +337,51 @@ test('«закрыт этот адрес» отличается от «прок�
     rmSync(tlsCert.dir, { recursive: true, force: true });
   }
 });
+
+const GREP_SOURCES = 'grep -rl packages.gitlab.com /etc/apt/sources.list /etc/apt/sources.list.d/';
+const LS_LISTS = 'ls -1 /var/lib/apt/lists';
+
+/**
+ * Настоящий вывод с боевой машины: прокси проходит целиком до HTTP 200, а
+ * последний рубеж говорит «apt не видит ни одной версии: причина не названа».
+ *
+ * Причина не названа потому, что её нет: `apt-cache madison` читает только
+ * локальные списки и в сеть не ходит, поэтому при нескачанных списках он
+ * выходит с кодом 0, пустым stdout и пустым stderr. Проверено на живом apt.
+ * Пока это выглядело как отказ прокси, человек чинил то, что не сломано.
+ */
+test('нескачанные списки apt называются прямо, а не «причина не названа»', async () => {
+  const exec = createExec({
+    mode: MODE.REPLAY,
+    fixtures: {
+      [GREP_SOURCES]: { code: 0, stdout: '/etc/apt/sources.list.d/gitlab_gitlab-ee.list\n' },
+      // Списки есть, но только Ubuntu: репозиторий GitLab не скачан ни разу.
+      [LS_LISTS]: { code: 0, stdout: 'archive.ubuntu.com_ubuntu_dists_focal_main_binary-amd64_Packages\nlock\n' },
+      'apt-cache madison gitlab-ee': { code: 0, stdout: '', stderr: '' },
+    },
+  });
+  const steps = await probeProxy({ proxyUrl: null, t, exec });
+  const last = steps[steps.length - 1];
+  assert.equal(last.id, 'apt-not-updated');
+  assert.equal(last.level, LEVEL.CRITICAL);
+  // Починка обязана быть названа: без неё это тупик.
+  const remedy = remedyFor({ id: last.id, level: last.level, params: last.params });
+  assert.deepEqual(remedy?.argv, ['apt-get', 'update']);
+});
+
+test('скачанные списки без gitlab-ee — другой диагноз, и тоже названный', async () => {
+  const exec = createExec({
+    mode: MODE.REPLAY,
+    fixtures: {
+      [GREP_SOURCES]: { code: 0, stdout: '/etc/apt/sources.list.d/gitlab_gitlab-ee.list\n' },
+      [LS_LISTS]: { code: 0, stdout: 'packages.gitlab.com_gitlab_gitlab-ee_ubuntu_dists_focal_main_binary-amd64_Packages\n' },
+      'apt-cache madison gitlab-ee': { code: 0, stdout: '', stderr: '' },
+    },
+  });
+  const steps = await probeProxy({ proxyUrl: null, t, exec });
+  const last = steps[steps.length - 1];
+  assert.equal(last.id, 'apt-repo');
+  // «причина не названа» — признание бесполезности; здесь причина есть.
+  assert.notEqual(last.params.detail, t('probe.noDetail'));
+  assert.match(last.params.detail, /gitlab-ee/);
+});

@@ -2,6 +2,7 @@ import net from 'node:net';
 import tls from 'node:tls';
 import { readFileSync } from 'node:fs';
 import { openSocket, parseProxy, request } from '../core/http.js';
+import { errorDetail } from '../core/exec.js';
 import { NetError, NET, netMessage } from '../core/netError.js';
 import { GITLAB_REPO_HOST } from './aptProxy.js';
 import { LEVEL } from '../core/events.js';
@@ -207,6 +208,23 @@ async function aptProbes({ add, exec, confPath, t, direct = false }) {
   } catch { /* нет grep — идём дальше, madison всё равно ответит */ }
 
   try {
+    // `apt-cache madison` — запрос локальный: он читает уже скачанные списки
+    // из /var/lib/apt/lists и в сеть не ходит вообще. Пока `apt-get update`
+    // ни разу не прошёл для этого репозитория, версий не будет при самом
+    // исправном прокси — и apt при этом выходит с кодом 0 и пустым stderr,
+    // то есть не сообщает никакой причины. Проверено на живом apt.
+    // В именах файлов apt заменяет подчёркиваниями только разделители пути:
+    // точки в имени хоста остаются (archive.ubuntu.com_ubuntu_dists_…).
+    const ls = await exec(['ls', '-1', '/var/lib/apt/lists'], { readOnly: true, allowFailure: true });
+    const fetched = ls.stdout.split('\n')
+      .some((f) => f.includes(GITLAB_REPO_HOST) && f.includes('Packages'));
+    if (ls.code === 0 && !fetched) {
+      add(fail('apt-not-updated', { host: GITLAB_REPO_HOST }));
+      return;
+    }
+  } catch { /* нет ls — пусть отвечает madison */ }
+
+  try {
     // Тот же конфиг прокси, что уходит в apt-get при установке: проверять
     // другой набор настроек — проверять не то.
     const argv = ['apt-cache', ...(confPath ? ['-c', confPath] : []), 'madison', 'gitlab-ee'];
@@ -214,7 +232,9 @@ async function aptProbes({ add, exec, confPath, t, direct = false }) {
     const n = r.stdout.split('\n').filter((l) => l.includes('gitlab-ee')).length;
     add(n > 0
       ? ok('apt-repo', { n })
-      : fail('apt-repo', { detail: (r.stderr || '').trim().split('\n').pop() || t('probe.noDetail') }));
+      // Пустой stderr здесь не «причина не названа», а сама причина: apt
+      // отвечает из локальных списков и молчит, когда в них ничего нет.
+      : fail('apt-repo', { detail: errorDetail(r.stderr) || t('probe.aptSilent') }));
   } catch (err) {
     add(fail('apt-repo', { detail: err.message || t('probe.noDetail') }));
   }
