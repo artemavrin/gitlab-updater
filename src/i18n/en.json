@@ -191,7 +191,7 @@
   "check.os-ceiling.warn": "{os} supports {target} at most {max} — use --safe-for-os or --allow-unsupported-os",
   "check.postgres.ok": "{have}",
   "check.postgres.critical": "version {have}, but {target} requires {need} or newer",
-  "check.postgres.warn": "version {have}; step {step} ({target}) needs {need} or newer — upgrade before that step; the climb can start now",
+  "check.postgres.warn": "version {have}; step {step} ({target}) needs {need} or newer. pg-upgrade will not help yet: the version arrives with a package along the way — upgrade the database before that step",
   "check.postgres-unknown.warn": "could not determine the version",
   "check.check-failed.warn": "check {check} did not run: {detail}",
   "doctor.summary": "{ok} passed · {warnings} warnings · {critical} critical",
@@ -491,5 +491,8 @@
   "telegram.nobodyHint": "Open the bot chat, press Start, and run the command again.",
   "telegram.webhook": "The bot has a webhook configured, so getUpdates cannot work: {detail}",
   "telegram.failed": "Telegram did not answer as expected: {detail}",
-  "exit.telegram-failed": "could not find the chat id: no token, a webhook on the bot, or nobody wrote to it"
+  "exit.telegram-failed": "could not find the chat id: no token, a webhook on the bot, or nobody wrote to it",
+  "run.stop.postgres-step": "STOPPED before {step}: PostgreSQL {have}, and this step needs {need} or newer. The version arrives with a package along the way — upgrade the database, then continue.",
+  "event.stop.postgres-step": "PostgreSQL below what this step needs",
+  "remedy.pg-later": "upgrade the bundled PostgreSQL before that step, once an installed package brings it"
 }

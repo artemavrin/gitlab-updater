@@ -397,3 +397,64 @@ test('resume берёт режим бэкапа из сохранённого п
   await commandResume(ctx);
   assert.ok(calls.some((c) => c.startsWith('gitlab-backup')), 'шаг выполнен без бэкапа');
 });
+
+/**
+ * Барьер PostgreSQL на длинном пути: проверка на старте к восьмому шагу
+ * устаревает.
+ *
+ * Настоящий случай: 13.12.15 на PostgreSQL 12.6, девятнадцать шагов, барьер на
+ * 16.3.9 (нужен 13.6). Проверки выполнялись один раз до цикла, поэтому с
+ * --force apt получил бы 16.3 на PostgreSQL 12 посреди многочасового прогона.
+ * А `gitlab-ctl pg-upgrade` заранее не помогает: на 13.12 он отвечает «12.6
+ * уже стоит, делать нечего» — нужную версию приносит пакет по пути.
+ */
+test('подъём останавливается перед шагом, которому не хватает PostgreSQL', async () => {
+  // Барьер должен стоять НЕ на первом шаге: на первом это критическая находка,
+  // и до цикла дело не доходит. Здесь 15.4.6 → 15.11.13 → 16.3.9, и требование
+  // 13.6 появляется только на втором шаге — ровно как у пути с 13.x.
+  const { ctx, calls } = bed({
+    version: '15.4.6-ee.0',
+    flags: { force: true, to: '16.3.9-ee.0' },
+    extra: { 'gitlab-psql --version': { code: 0, stdout: 'psql (PostgreSQL) 12.6' } },
+  });
+  const r = await commandRun(ctx);
+  assert.equal(r.code, EXIT.ERROR, r.lines.join('\n'));
+  assert.equal(r.errorCode, 'postgres-step');
+  const text = r.lines.join('\n');
+  assert.match(text, /16\.3\.9-ee\.0/);
+  assert.match(text, /12\.6/);
+  assert.match(text, /13\.6/);
+
+  // Установка — это не `--download-only`: пакеты профиль long скачивает все
+  // сразу, и заранее скачанный 16.3.9 ничего не меняет на сервере.
+  const installed = calls.filter((c) => c.startsWith('apt-get install') && !c.includes('--download-only'));
+  assert.ok(installed.some((c) => c.includes('gitlab-ee=15.11.13-ee.0')), installed.join('\n'));
+  // А второй шаг не начинали: ни установки, ни бэкапа под него.
+  assert.ok(!installed.some((c) => c.includes('gitlab-ee=16.3.9-ee.0')), installed.join('\n'));
+  const backups = calls.filter((c) => c.startsWith('gitlab-backup')).length;
+  assert.equal(backups, 1, 'бэкап под невыполнимый шаг — час впустую');
+  // Состояние сохранено: после pg-upgrade продолжают через resume.
+  assert.match(text, /resume/);
+});
+
+test('достаточная версия PostgreSQL шаг не задерживает', async () => {
+  const { ctx, calls } = bed({
+    version: '15.4.6-ee.0',
+    flags: { force: true, to: '16.3.9-ee.0' },
+    extra: { 'gitlab-psql --version': { code: 0, stdout: 'psql (PostgreSQL) 13.11' } },
+  });
+  const r = await commandRun(ctx);
+  assert.equal(r.code, EXIT.CURRENT, r.lines.join('\n'));
+  assert.ok(calls.some((c) => c.includes('gitlab-ee=16.3.9-ee.0')), calls.join('\n'));
+});
+
+test('неопределимая версия PostgreSQL не останавливает подъём', async () => {
+  // Своим незнанием мешать апгрейду нельзя: нехватку заметит сам пакет.
+  const { ctx } = bed({
+    version: '15.4.6-ee.0',
+    flags: { force: true, to: '16.3.9-ee.0' },
+    extra: { 'gitlab-psql --version': { code: 1, stdout: '', stderr: 'нет такой команды' } },
+  });
+  const r = await commandRun(ctx);
+  assert.equal(r.code, EXIT.CURRENT, r.lines.join('\n'));
+});

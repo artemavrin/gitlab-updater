@@ -192,7 +192,7 @@
   "check.os-ceiling.warn": "{os} поддерживает максимум {max}, а цель {target} — нужен --safe-for-os или --allow-unsupported-os",
   "check.postgres.ok": "{have}",
   "check.postgres.critical": "версия {have}, а {target} требует не ниже {need}",
-  "check.postgres.warn": "версия {have}; шаг {step} ({target}) требует не ниже {need} — обновить до него, подъём можно начинать сейчас",
+  "check.postgres.warn": "версия {have}; шаг {step} ({target}) требует не ниже {need}. Сейчас pg-upgrade не поможет: нужную версию принесёт пакет по пути — поднимите базу перед этим шагом",
   "check.postgres-unknown.warn": "версию определить не удалось",
   "check.check-failed.warn": "проверка {check} не выполнилась: {detail}",
   "doctor.summary": "{ok} пройдено · {warnings} предупреждений · {critical} критических",
@@ -492,5 +492,8 @@
   "telegram.nobodyHint": "Откройте чат с ботом, нажмите Start и повторите команду.",
   "telegram.webhook": "На боте настроен webhook, и getUpdates не работает: {detail}",
   "telegram.failed": "Telegram не ответил как ожидалось: {detail}",
-  "exit.telegram-failed": "chat id узнать не удалось: нет токена, webhook на боте или боту никто не написал"
+  "exit.telegram-failed": "chat id узнать не удалось: нет токена, webhook на боте или боту никто не написал",
+  "run.stop.postgres-step": "ОСТАНОВЛЕНО перед {step}: PostgreSQL {have}, а этот шаг требует не ниже {need}. Нужную версию приносит пакет по пути — поднимите базу и продолжите.",
+  "event.stop.postgres-step": "PostgreSQL ниже требуемого для этого шага",
+  "remedy.pg-later": "поднять встроенный PostgreSQL перед этим шагом, когда его принесёт установленный пакет"
 }

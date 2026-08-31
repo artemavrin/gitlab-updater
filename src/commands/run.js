@@ -7,6 +7,8 @@ import { installVersion, predownload, updateLists, holdArgv, releaseHold } from 
 import { waitServices, waitMigrations, MigrationsFailed } from '../steps/settle.js';
 import { detectGitlab } from '../detect/gitlab.js';
 import { policyFor, EXIT } from '../plan/planner.js';
+import { postgresRange, comparePg } from '../plan/matrices.js';
+import { parsePgVersion } from '../detect/services.js';
 import { renderFindings } from './doctor.js';
 import { commandCheck } from './check.js';
 
@@ -163,6 +165,21 @@ export async function commandRun(ctx, { resuming = false } = {}) {
     for (let i = state.stepIndex; i < state.steps.length; i++) {
       const step = state.steps[i];
       const stepStarted = Date.now();
+
+      // Барьер PostgreSQL проверяется перед каждым шагом, а не один раз до
+      // цикла. На пути с 13.x версия базы меняется под нами: PostgreSQL 13
+      // приносит пакет 15.0, PostgreSQL 14 — 17.0. Проверка «на старте»
+      // отвечала бы на вопрос, который к восьмому шагу давно устарел, и
+      // `--force` отправлял бы apt ставить 16.3 на PostgreSQL 12 посреди
+      // многочасового прогона — в самом неудачном месте из возможных.
+      //
+      // Останов до бэкапа: делать полный бэкап ради шага, который заведомо не
+      // выполнится, значит потратить час впустую.
+      const need = await pgBarrier({ exec, data: ctx.data, version: step.version, dry });
+      if (need) {
+        return stop(t, lines, 'postgres-step', { step: step.version, ...need }, state, bus);
+      }
+
       bus?.emit({ t: 'step:start', index: i + 1, of: state.steps.length, version: step.version });
 
       // Первый бэкап полный, дальше дешёвые: апгрейд меняет базу и код,
@@ -252,6 +269,25 @@ export async function commandRun(ctx, { resuming = false } = {}) {
   } finally {
     lock.release();
   }
+}
+
+/**
+ * Требование PostgreSQL для конкретного шага — или null, если оно выполнено.
+ *
+ * Версию базы читаем заново на каждом шаге: её меняют и сами пакеты по пути,
+ * и человек между шагами через `gitlab-ctl pg-upgrade`. Запомненное на старте
+ * значение к середине подъёма — просто неправда.
+ *
+ * Не смогли определить версию — не мешаем: своим незнанием останавливать
+ * апгрейд нельзя, а нехватку заметит сам пакет.
+ */
+async function pgBarrier({ exec, data, version, dry }) {
+  const range = postgresRange(data.pgRequirements, version);
+  if (!range || dry) return null;
+  const r = await exec(['gitlab-psql', '--version'], { readOnly: true, allowFailure: true });
+  const have = parsePgVersion(r.stdout);
+  if (r.code !== 0 || !have) return null;
+  return comparePg(have, range.min) < 0 ? { have, need: range.min } : null;
 }
 
 function stop(t, lines, reason, params, state, bus) {
