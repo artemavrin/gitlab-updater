@@ -1,23 +1,18 @@
 import { runChecks, DEPTH, blocked, gate } from '../checks/index.js';
-import { width, pad, wrap } from '../render/format.js';
-import { describeFinding, blockerLines } from '../render/findings.js';
+import { findingLines, blockerLines } from '../render/findings.js';
 import { EXIT } from '../plan/planner.js';
 import { commandCheck } from './check.js';
 
 const LINE = 78;
 
 /**
- * Список находок по строке на каждую. Продолжение переносится под колонку
- * сообщения: раньше здесь стояла обрезка, и резалось именно объяснение,
- * почему нельзя идти дальше.
+ * Список находок строками. `paint` красит маркер и заголовок, когда
+ * приёмник — терминал; в редиректе он тождественный, и текст тот же.
  */
-export function renderFindings(t, findings, { limit = LINE } = {}) {
-  const said = findings.map((f) => describeFinding(f, t));
-  const col = width(said.map((f) => f.title)) + 2;
-  const head = 3 + 1 + 2 + col;
-  return said.flatMap((f) =>
-    wrap(f.message, Math.max(20, limit - head)).map((line, i) =>
-      (i === 0 ? `   ${f.mark}  ${pad(f.title, col)}` : ' '.repeat(head)) + line));
+export function renderFindings(t, findings, { limit = LINE, paint = null } = {}) {
+  return findingLines(findings, t, { limit }).map((l) => (paint
+    ? paint(l.role, l.mark) + l.title + paint('dim', l.message)
+    : l.mark + l.title + l.message));
 }
 
 /** Тот же блок, что на экране, склеенный в строки: цвета в не-TTY нет. */
@@ -51,7 +46,7 @@ export async function commandDoctor(ctx) {
   // там, где апгрейд не начнётся.
   const { verdict } = gate(summary, flags);
 
-  const lines = ['', ...renderFindings(t, summary.findings), ''];
+  const lines = ['', ...renderFindings(t, summary.findings, { paint: ctx.paint }), ''];
   lines.push(`   ${t('doctor.summary', summary)}`, '', ` ${t(verdict)}`, '');
 
   return {

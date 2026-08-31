@@ -34,7 +34,7 @@ export async function commandPlan(ctx) {
     safeForOs: ctx.flags.safeForOs,
   }, { depth });
 
-  lines.push(...renderFindings(t, checks.findings), '');
+  lines.push(...renderFindings(t, checks.findings, { paint: ctx.paint }), '');
   lines.push(`   ${t('doctor.summary', checks)}`, '');
 
   const base = {

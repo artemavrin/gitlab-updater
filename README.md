@@ -31,6 +31,28 @@ sudo install -m 0755 gitlab-upgrade.mjs /usr/local/bin/gitlab-upgrade
 
 If the server has no outbound access, download on a machine that does and `scp` the file over.
 
+## Screens
+
+<img src="docs/media/blockers.png" width="820" alt="Blockers: what stops the upgrade and the command that fixes each one">
+
+Every finding names the command that fixes it — taken from a table checked against docs.gitlab.com, and picked by your installed version where the command depends on it. Where GitLab documents no command, you get the documentation link instead of an invented one.
+
+<img src="docs/media/run.png" width="820" alt="The run feed: steps, phases and the Ctrl-C safety line">
+
+`run` is a scrollable feed, not a fixed frame: on the fifth hour you can still scroll back to the first step. Only the bottom line is live. It turns yellow while `dpkg` is running, and the first Ctrl-C there explains the cost instead of killing the process.
+
+<img src="docs/media/path.png" width="820" alt="The upgrade path screen, opened with [p]">
+
+`[p]` opens the path: one line per step, columns aligned so steps are comparable, the selected step expanded.
+
+<img src="docs/media/plan.png" width="820" alt="plan: detection, readiness checks and the computed route">
+
+<img src="docs/media/patch.png" width="820" alt="The compact screen for a routine patch">
+
+A routine patch gets its own screen — no step counter, no path, no history. Twelve minutes of work should not look like preparation for surgery.
+
+> The `proxy test` shots below are live runs against a real proxy and the real `packages.gitlab.com`. The others are rendered by the real code from recorded fixtures — the repository listing is the actual `apt-cache madison` output, 398 versions; the upgrade feed replays a recorded event stream.
+
 ## Use
 
 ```bash
@@ -130,6 +152,12 @@ Exit codes differ from `check` on purpose: `check` describes the whole gap to th
 ## Behind a proxy
 
 There is no direct route to `packages.gitlab.com` in many closed networks. Point the tool at an HTTP or SOCKS5 proxy and it configures **only that host** — your internal Ubuntu mirror keeps working directly.
+
+<img src="docs/media/proxy-test.png" width="820" alt="proxy test: configuration, TCP, handshake, CONNECT, TLS, HTTP and apt">
+
+`proxy test` walks the chain rung by rung and stops at the first break, so "no packages visible" stops being a guessing game. It needs no root — you run diagnostics before you have sudo, or they are useless.
+
+<img src="docs/media/proxy-test-broken.png" width="820" alt="proxy test stopping at the first broken rung">
 
 ```bash
 sudo gitlab-upgrade --proxy socks5h://user:pass@10.0.0.5:1080 check

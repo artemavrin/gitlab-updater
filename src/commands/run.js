@@ -112,7 +112,7 @@ export async function commandRun(ctx, { resuming = false } = {}) {
       ok: checks.ok, warnings: checks.warnings, critical: checks.critical, blocked: blocked(checks),
       findings: checks.findings.map((f) => ({ id: f.id, check: f.check, level: f.level, params: f.params, remedy: f.remedy ?? null })),
     };
-    lines.push('', ...renderFindings(t, checks.findings), '', `   ${t('doctor.summary', checks)}`, '');
+    lines.push('', ...renderFindings(t, checks.findings, { paint: ctx.paint }), '', `   ${t('doctor.summary', checks)}`, '');
     const ready = gate(checks, flags, { resuming });
     if (!ready.ok) {
       lines.push(` ${t(ready.verdict)}`, '');

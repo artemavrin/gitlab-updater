@@ -1,5 +1,5 @@
 import { LEVEL } from '../core/events.js';
-import { wrap } from './format.js';
+import { pad, width, wrap } from './format.js';
 
 /**
  * Находка → структура для показа. Одно место на все поверхности: экран
@@ -37,6 +37,27 @@ function describeRemedy(remedy, t) {
     flag: remedy.flag ?? null,
     docs: remedy.docs ?? null,
   };
+}
+
+/**
+ * Список находок строками с ролью: по строке на находку, продолжение —
+ * под колонкой сообщения. Раньше здесь стояла обрезка, и резалось именно
+ * объяснение, почему нельзя идти дальше.
+ */
+export function findingLines(findings, t, { limit = 78 } = {}) {
+  const said = findings.map((f) => describeFinding(f, t));
+  const col = width(said.map((f) => f.title)) + 2;
+  const head = 3 + 1 + 2 + col;
+  // Строка разбита на три части: цветом помечается уровень (маркер),
+  // заголовок остаётся обычным, сообщение приглушено. Если красить строку
+  // целиком, цвет перестаёт значить «уровень» и становится фоном.
+  return said.flatMap((f) =>
+    wrap(f.message, Math.max(20, limit - head)).map((line, i) => ({
+      role: f.level,
+      mark: i === 0 ? `   ${f.mark}  ` : ' '.repeat(head),
+      title: i === 0 ? pad(f.title, col) : '',
+      message: line,
+    })));
 }
 
 /**

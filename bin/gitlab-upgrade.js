@@ -10,6 +10,7 @@ import { EventBus } from '../src/core/events.js';
 import { createJsonRenderer, createPlainRenderer, createAttachRenderer } from '../src/render/plain.js';
 import { inkAvailable } from '../src/ui/available.js';
 import { printBlockers } from '../src/render/blockers.js';
+import { createPainter, wantsColor } from '../src/render/color.js';
 import { commandCheck } from '../src/commands/check.js';
 import { commandPlan } from '../src/commands/plan.js';
 import { commandRefreshPath } from '../src/commands/refreshPath.js';
@@ -170,8 +171,13 @@ async function main(argv) {
     }
   }
 
+  // Цвет решается там, где известен приёмник: команда его не выбирает.
+  const paint = createPainter({
+    color: wantsColor({ flag: flags.noColor ? false : undefined, stream: process.stdout }) && !flags.json,
+  });
+
   const ctx = {
-    exec, t, flags, config, sources, bus, confPath,
+    exec, t, flags, config, sources, bus, confPath, paint,
     data: { upgradePath, osMatrix, pgRequirements },
     osPath: '/etc/os-release',
     dataPath: new URL('../data/upgrade-path.json', import.meta.url).pathname,

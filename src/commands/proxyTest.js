@@ -15,6 +15,7 @@ import { EXIT } from '../plan/planner.js';
  */
 export async function commandProxyTest(ctx) {
   const { t, config, exec, flags, confPath, sources } = ctx;
+  const paint = ctx.paint ?? ((_role, text) => text);
 
   const steps = await probeProxy({
     proxyUrl: config.proxy ?? null,
@@ -31,7 +32,7 @@ export async function commandProxyTest(ctx) {
   const warnings = steps.filter((s) => s.level === LEVEL.WARN).length;
   const verdict = critical ? 'probe.broken' : warnings ? 'probe.partial' : 'probe.clean';
 
-  const lines = ['', ...renderFindings(t, steps), '', ` ${t(verdict)}`, ''];
+  const lines = ['', ...renderFindings(t, steps, { paint }), '', ` ${paint(critical ? 'error' : warnings ? 'warn' : 'ok', t(verdict))}`, ''];
 
   return {
     code: critical ? EXIT.ERROR : EXIT.CURRENT,
