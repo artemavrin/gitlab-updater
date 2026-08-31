@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Box, Static, Text, useInput, useStdin } from 'ink';
 import { TOPIC } from '../../render/events.js';
-import { clip, pad } from '../../render/format.js';
+import { clip, padCell } from '../../render/format.js';
 import { clock } from '../runState.js';
 import { Spinner } from '../components/Spinner.jsx';
 import { SafetyBar } from '../components/SafetyBar.jsx';
@@ -70,7 +70,11 @@ export function Run({ state, t, theme, compact, onAbort, now = Date.now }) {
     () => (patch ? state.feed.filter((f) => f.topic !== TOPIC.ROUTE) : state.feed),
     [state.feed, patch],
   );
-  const labelWidth = useMemo(() => labelWidthOf(feed), [feed]);
+  // Живая строка входит в расчёт ширины: её подпись бывает длиннее всего,
+  // что уже в ленте, и колонка не должна прыгать под ней.
+  const labelWidth = useMemo(
+    () => Math.max(labelWidthOf(feed), state.live ? [...state.live.name].length : 0),
+    [feed, state.live?.name]);
 
   const status = patch
     ? t('ui.statusPatch', { from: state.from, target: state.target, elapsed })
@@ -88,7 +92,7 @@ export function Run({ state, t, theme, compact, onAbort, now = Date.now }) {
         <Box>
           <Text>{'   '}</Text>
           <Spinner {...theme.accent} />
-          <Text>{' ' + pad(state.live.name, labelWidth + 2)}</Text>
+          <Text>{' ' + padCell(state.live.name, labelWidth + 2)}</Text>
           <Text {...theme.dim}>{clip(state.live.value, theme.width - labelWidth - 7)}</Text>
         </Box>
       ) : null}

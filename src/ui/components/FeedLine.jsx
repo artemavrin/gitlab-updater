@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { MARK, KIND } from '../../render/events.js';
-import { clip, pad, width } from '../../render/format.js';
+import { clip, padCell, width } from '../../render/format.js';
 
 const time = (ts) => (ts ? String(ts).slice(11, 19) : '        ');
 
@@ -14,7 +14,7 @@ export function FeedLine({ entry, theme, labelWidth = 0, width: max = 78 }) {
     return (
       <Box>
         <Text {...theme.role(entry.role)}>{`   ${MARK[entry.role]} `}</Text>
-        <Text>{pad(entry.name, labelWidth + 2)}</Text>
+        <Text>{padCell(entry.name, labelWidth + 2)}</Text>
         <Text {...theme.dim}>{clip(entry.value, max - labelWidth - 7)}</Text>
       </Box>
     );

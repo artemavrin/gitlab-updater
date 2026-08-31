@@ -5,6 +5,7 @@ import { createTranslator, LOCALES } from '../src/i18n/index.js';
 import { initial, reduce, clock, STEP } from '../src/ui/runState.js';
 import { describe as say, phaseOf, isDangerous } from '../src/render/events.js';
 import { createPlainRenderer } from '../src/render/plain.js';
+import { padCell } from '../src/render/format.js';
 import { inkAvailable } from '../src/ui/available.js';
 import { createTheme, wantsColor } from '../src/ui/theme.js';
 import { Run, PathView, Interrupt } from '../src/ui/screens/Run.jsx';
@@ -242,4 +243,31 @@ test('в безопасной фазе Ctrl-C прерывает сразу', as
   // предупреждения.
   assert.equal(aborted, 1);
   unmount();
+});
+
+/**
+ * Настоящий кадр с боевой машины: «предзагрузка пакетовидёт».
+ *
+ * Живая строка не участвовала в расчёте ширины колонки, а `pad` отдаёт строку
+ * как есть, когда она длиннее колонки. Подпись оказалась длиннее всего, что
+ * успело попасть в ленту, разделитель исчез — и две колонки слиплись в одно
+ * слово на экране, за которым человек смотрит часами.
+ */
+test('длинная подпись живой строки не склеивается со значением', () => {
+  // Лента почти пуста — колонка узкая, а подпись длинная: ровно тот случай.
+  const state = play([
+    { t: 'run:start', ts: '2026-08-31T21:59:21.000Z', from: '13.12.15-ee', target: '18.11.11-ee', steps: 19, profile: 'long', versions: [] },
+    { t: 'predownload:start', ts: '2026-08-31T21:59:22.000Z', total: 19 },
+  ], 'ru');
+  const text = frame(state, 'ru');
+  const live = text.split('\n').find((l) => /предзагрузка/.test(l));
+  assert.ok(live, `живой строки нет в кадре:\n${text}`);
+  assert.ok(!/пакетовидёт/.test(live), `колонки склеились: «${live.trim()}»`);
+  assert.match(live, /предзагрузка пакетов\s+идёт/);
+});
+
+test('подпись длиннее колонки не склеивается и в ленте', () => {
+  // Колонка может быть уже подписи, но разделитель обязателен всегда.
+  assert.equal(padCell('очень длинная подпись', 5), 'очень длинная подпись ');
+  assert.equal(padCell('коротко', 12), 'коротко     ');
 });
