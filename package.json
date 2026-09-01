@@ -1,6 +1,6 @@
 {
   "name": "gitlab-upgrade",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Safe, unattended upgrades for self-managed GitLab Omnibus",
   "type": "module",
   "license": "MIT",
