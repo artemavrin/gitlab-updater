@@ -107,22 +107,49 @@ test('занятый apt останавливает, активный тайме
   assert.equal(byId(timer.findings, 'apt-timer').level, LEVEL.WARN);
 });
 
+/** Внешняя база: строка postgresql['enable'] = false в gitlab.rb. */
+const EXTERNAL_PG = { "grep -E ^\\s*postgresql\\['enable'\\] /etc/gitlab/gitlab.rb": { code: 0, stdout: "postgresql['enable'] = false\n" } };
+const pgVersion = (v) => ({ 'gitlab-psql --version': { code: 0, stdout: `psql (PostgreSQL) ${v}` } });
+
 test('старый PostgreSQL сверяется с конечной версией пути, а не со следующим шагом', async () => {
-  const s = await runChecks(base({}, { 'gitlab-psql --version': { code: 0, stdout: 'psql (PostgreSQL) 12.14' } }), { depth: DEPTH.FULL });
+  const s = await runChecks(base({}, pgVersion('12.14')), { depth: DEPTH.FULL });
   const f = byId(s.findings, 'postgres');
   assert.equal(f.level, LEVEL.CRITICAL);
-  assert.equal(f.params.need, '14.14');
+  // Встроенная база: барьер — мажорная из кода GitLab, а не число из таблицы
+  // требований к внешней БД.
+  assert.equal(f.params.need, '14');
   assert.equal(f.params.target, '17.11.6-ee.0');
 });
 
 /**
- * Официальный минимум для GitLab 17 — 14.14, а не «14».
- * Округление до мажорной пропустило бы 14.2 как подходящую.
+ * Минимум у встроенной и внешней базы разный, и путать их дорого.
+ *
+ * Живой случай: на 17.1.8 подъём встал на PostgreSQL 14.11 с требованием
+ * 14.14. 14.14 — настоящее число из таблицы требований, но таблица написана
+ * про внешний PostgreSQL, а пакет omnibus 17.1.8 несёт ровно 14.11
+ * (config/software/postgresql.rb, default_version). То есть встроенной базе
+ * взять 14.14 неоткуда, и остановка была вечной: сам же инструмент поставил
+ * эту 14.11 шагом раньше.
  */
-test('минимум PostgreSQL сверяется с точностью до минорной версии', async () => {
-  const low = await runChecks(base({}, { 'gitlab-psql --version': { code: 0, stdout: 'psql (PostgreSQL) 14.2' } }), { depth: DEPTH.FULL });
-  assert.equal(byId(low.findings, 'postgres').level, LEVEL.CRITICAL, '14.2 ниже требуемых 14.14');
-  const fine = await runChecks(base({}, { 'gitlab-psql --version': { code: 0, stdout: 'psql (PostgreSQL) 14.14' } }), { depth: DEPTH.FULL });
+test('встроенной базе хватает мажорной из кода GitLab', async () => {
+  // Ровно та версия, что встала колом на живом сервере.
+  const s = await runChecks(base({}, pgVersion('14.11')), { depth: DEPTH.FULL });
+  assert.equal(byId(s.findings, 'postgres').level, LEVEL.OK, 'пакет 17.1.8 сам несёт 14.11 — требовать больше нечего');
+
+  const low = await runChecks(base({}, pgVersion('13.14')), { depth: DEPTH.FULL });
+  assert.equal(byId(low.findings, 'postgres').level, LEVEL.CRITICAL, 'мажорная 13 для GitLab 17 действительно не годится');
+  assert.equal(byId(low.findings, 'postgres').params.need, '14');
+});
+
+test('внешней базе требование остаётся точным до минорной', async () => {
+  // Здесь таблица требований применима, и округление до мажорной пропустило
+  // бы 14.2 как подходящую.
+  const low = await runChecks(base({}, { ...pgVersion('14.2'), ...EXTERNAL_PG }), { depth: DEPTH.FULL });
+  const f = byId(low.findings, 'postgres-external');
+  assert.equal(f.level, LEVEL.CRITICAL, '14.2 ниже требуемых 14.14');
+  assert.equal(f.params.need, '14.14');
+
+  const fine = await runChecks(base({}, { ...pgVersion('14.14'), ...EXTERNAL_PG }), { depth: DEPTH.FULL });
   assert.equal(byId(fine.findings, 'postgres').level, LEVEL.OK);
 });
 
@@ -352,9 +379,11 @@ test('на длинном пути PostgreSQL сверяется с шагом, 
 
   // Предупреждение, а не стоп: подъём можно начинать сегодня.
   assert.equal(f.level, LEVEL.WARN);
-  // Барьер — 16.11: это первый шаг, где начинается таблица требований (13.6).
+  // Барьер — 16.11: это первый шаг, где начинается таблица требований.
+  // Число — мажорная из кода GitLab (MINIMUM_POSTGRES_VERSION = 13 в 16.0):
+  // база встроенная, и документированные для внешней 13.6 к ней не применимы.
   assert.equal(f.params.target, '16.11.10-ee.0');
-  assert.equal(f.params.need, '13.6');
+  assert.equal(f.params.need, '13');
   assert.equal(f.params.step, 4);
   // И у предупреждения обязана быть починка: без неё это просто тревога.
   assert.ok(f.remedy, 'починка нужна и для отложенного барьера');
@@ -371,7 +400,21 @@ test('барьер на первом же шаге остаётся стопом
   const f = byId((await runChecks(ctx, { depth: DEPTH.FULL })).findings, 'postgres');
   assert.equal(f.level, LEVEL.CRITICAL);
   assert.equal(f.params.step, 1);
-  assert.equal(f.params.need, '14.14');
+  assert.equal(f.params.need, '14');
+});
+
+test('версия, которую принёс сам пакет, барьером не становится', async () => {
+  // 17.1.8 несёт PostgreSQL 14.11. Если требовать с него 14.14, подъём встаёт
+  // навсегда: следующую версию базы приносит следующий пакет, а поставить его
+  // мешает этот же барьер. Ровно так и случилось на живом сервере.
+  const ctx = base({
+    plan: {
+      steps: [{ raw: '17.1.8-ee.0' }, { raw: '17.11.7-ee.0' }],
+      target: { major: 17, minor: 11, patch: 7, raw: '17.11.7-ee.0' },
+    },
+  }, pgVersion('14.11'));
+  const s = await runChecks(ctx, { depth: DEPTH.FULL });
+  assert.equal(byId(s.findings, 'postgres').level, LEVEL.OK, JSON.stringify(byId(s.findings, 'postgres')));
 });
 
 /**

@@ -5,7 +5,7 @@ import { readSettings, firstConflict } from '../detect/gitlabRb.js';
 import { describeChannels } from '../notify/index.js';
 import { policyFor } from '../plan/planner.js';
 import { freeBytes, toGb, GB } from '../detect/disk.js';
-import { postgresRange, osCeiling, comparePg, pgMajor } from '../plan/matrices.js';
+import { postgresRange, pgFloor, osCeiling, comparePg, pgMajor } from '../plan/matrices.js';
 import { parseVersion, compareVersions, withinCeiling } from '../plan/version.js';
 import { remedyFor } from './remedies.js';
 import { MIGRATION_QUERY, parseMigrationCounts } from '../steps/settle.js';
@@ -256,18 +256,21 @@ export const CHECKS = [
       // предлагала pg-upgrade, который на 13.12 всё равно не даёт 16.5:
       // нужную версию приносят сами пакеты по пути.
       const steps = plan.steps?.length ? plan.steps : [plan.target];
+      // Чья база — выясняем ДО сравнения, а не после. Минимум у встроенной и
+      // внешней разный: документация пишет про внешнюю (17.x — 14.14), а
+      // пакет 17.1.8 несёт 14.11, и встроенной базе взять 14.14 неоткуда.
+      const where = await detectPostgres(exec);
       const needFor = (v) => {
         // Шаг может прийти и разобранной версией, и просто {raw}: сравнивать
         // надо по строке, иначе объект без major сойдёт за любую версию.
-        const r = postgresRange(data.pgRequirements, v.raw ?? v);
-        return r && comparePg(have, r.min) < 0 ? r.min : null;
+        const need = pgFloor(postgresRange(data.pgRequirements, v.raw ?? v), where);
+        return need && comparePg(have, need) < 0 ? need : null;
       };
       const at = steps.findIndex((step) => needFor(step) !== null);
       if (at >= 0) {
         // Для внешней БД `gitlab-ctl pg-upgrade` не применяется, а на
         // Patroni/HA запрещён документацией. Находка отдельная — иначе
         // экран советует команду, которая ничего не сделает.
-        const where = await detectPostgres(exec);
         const id = where.bundled === true ? 'postgres' : 'postgres-external';
         const params = { have, need: needFor(steps[at]), target: steps[at].raw, step: at + 1 };
         // Барьер на первом же шаге — стоп: этот пакет не установится. Барьер

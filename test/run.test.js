@@ -427,7 +427,9 @@ test('подъём останавливается перед шагом, кот�
   const text = r.lines.join('\n');
   assert.match(text, /16\.3\.9-ee\.0/);
   assert.match(text, /12\.6/);
-  assert.match(text, /13\.6/);
+  // Мажорная из кода GitLab: база встроенная, и документированные для внешней
+  // 13.6 к ней не применимы.
+  assert.match(text, /\b13\b/);
 
   // Установка — это не `--download-only`: пакеты профиль long скачивает все
   // сразу, и заранее скачанный 16.3.9 ничего не меняет на сервере.
@@ -708,4 +710,34 @@ test('--force не снимает несовместимую настройку 
   const r = await commandRun(ctx);
   assert.equal(r.errorCode, 'checks-failed');
   assert.ok(!calls.some((c) => /^(gitlab-backup|apt-get install)/.test(c)));
+});
+
+test('барьер не встаёт на версии базы, которую принёс сам пакет', async () => {
+  // Живая остановка на 17.1.8 при PostgreSQL 14.11. 14.14 — настоящее число из
+  // таблицы требований, но таблица про внешнюю БД, а пакет 17.1.8 несёт ровно
+  // 14.11. Требовать с встроенной базы больше значит остановить подъём
+  // навсегда: следующую версию базы приносит следующий пакет, а поставить его
+  // мешает этот же барьер.
+  const { ctx, calls } = bed({
+    version: '16.11.10-ee.0',
+    flags: { to: '17.1.8-ee.0' },
+    extra: { 'gitlab-psql --version': { code: 0, stdout: 'psql (PostgreSQL) 14.11' } },
+  });
+  const r = await commandRun(ctx);
+  assert.equal(r.code, EXIT.CURRENT, r.lines.join('\n'));
+  assert.ok(calls.some((c) => c.includes('apt-get install') && c.includes('gitlab-ee=17.1.8-ee.0')), calls.join('\n'));
+});
+
+test('а нехватка мажорной барьером остаётся', async () => {
+  // Послабление не должно превратиться в «пропускаем всё»: PostgreSQL 13 для
+  // GitLab 17 не годится по коду самого GitLab.
+  const { ctx } = bed({
+    version: '16.11.10-ee.0',
+    flags: { to: '17.1.8-ee.0' },
+    extra: { 'gitlab-psql --version': { code: 0, stdout: 'psql (PostgreSQL) 13.14' } },
+  });
+  const r = await commandRun(ctx);
+  // Один шаг — глубина fast, проверки postgres нет; ловит барьер в цикле.
+  assert.equal(r.errorCode, 'postgres-step', r.lines.join('\n'));
+  assert.match(r.lines.join('\n'), /13\.14/);
 });

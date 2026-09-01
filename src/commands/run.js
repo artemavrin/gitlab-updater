@@ -10,8 +10,8 @@ import { installVersion, predownload, updateLists, holdArgv, releaseHold } from 
 import { waitServices, waitMigrations, MigrationsFailed } from '../steps/settle.js';
 import { detectGitlab } from '../detect/gitlab.js';
 import { policyFor, EXIT } from '../plan/planner.js';
-import { postgresRange, comparePg } from '../plan/matrices.js';
-import { parsePgVersion } from '../detect/services.js';
+import { postgresRange, pgFloor, comparePg } from '../plan/matrices.js';
+import { parsePgVersion, detectPostgres } from '../detect/services.js';
 import { renderFindings } from './doctor.js';
 import { commandCheck } from './check.js';
 
@@ -303,7 +303,11 @@ async function pgBarrier({ exec, data, version, dry }) {
   const r = await exec(['gitlab-psql', '--version'], { readOnly: true, allowFailure: true });
   const have = parsePgVersion(r.stdout);
   if (r.code !== 0 || !have) return null;
-  return comparePg(have, range.min) < 0 ? { have, need: range.min } : null;
+  // Минимум зависит от того, чья база: документация пишет требование для
+  // внешней, а встроенной взять его порой неоткуда — пакет 17.1.8 несёт
+  // PostgreSQL 14.11 при документированных для 17.x 14.14.
+  const need = pgFloor(range, await detectPostgres(exec));
+  return need && comparePg(have, need) < 0 ? { have, need } : null;
 }
 
 function stop(t, lines, reason, params, state, bus) {

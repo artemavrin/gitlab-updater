@@ -40,6 +40,29 @@ export function comparePg(a, b) {
 
 export const pgMajor = (v) => Number(String(v).split('.')[0]);
 
+/**
+ * С какой версии PostgreSQL шаг поедет — с поправкой на то, чья это база.
+ *
+ * Для встроенной и внешней это разные числа, и разница не косметическая.
+ * Таблица требований в документации написана про внешний PostgreSQL: для
+ * GitLab 17.x там 14.14. А пакет omnibus 17.1.8 несёт PostgreSQL 14.11 —
+ * то есть встроенной базе взять 14.14 просто неоткуда, и требование
+ * останавливает подъём навсегда. Проверено вживую: инструмент так и
+ * остановился на 17.1.8 при 14.11, которую сам же и поставил шагом раньше.
+ *
+ * Для встроенной берём Gitlab::Database::MINIMUM_POSTGRES_VERSION — мажорную
+ * из кода GitLab. Ниже неё код действительно не работает; выше работает то,
+ * что принёс пакет.
+ *
+ * Неизвестное происхождение базы считаем внешним: там requirement строже, а
+ * ошибиться в сторону лишней остановки дешевле, чем поставить пакет на базу,
+ * с которой он не заведётся.
+ */
+export function pgFloor(range, { bundled = null } = {}) {
+  if (!range) return null;
+  return bundled === true ? (range.bundled_min ?? range.min) : range.min;
+}
+
 export function postgresRange(matrix, version) {
   const v = typeof version === 'string' ? parseVersion(version) : version;
   if (!v) return null;
