@@ -56,12 +56,24 @@ export function reconcile(state, actual) {
   if (state.edition && actual.edition && state.edition !== actual.edition) {
     return { ok: false, reason: 'edition-changed', expected: state.edition, actual: actual.edition };
   }
-  // Установка — единственная фаза, где на диске законно может быть как старая
-  // версия (dpkg не дошёл), так и новая (дошёл, но нас убили после). Отвергать
-  // оба варианта значило бы запрещать resume ровно после самого долгого шага.
-  const allowed = state.phase === 'install'
-    ? [state.expectedVersion, state.installing].filter(Boolean)
-    : [state.expectedVersion];
+  // Пока шаг не досчитан, на диске законно может быть как старая версия (dpkg
+  // не дошёл), так и новая (дошёл, но дальше сорвалось). Ровно это и означает
+  // непустой `installing`: его выставляют ДО установки и снимают только на
+  // фазе settle, когда шаг подтверждён.
+  //
+  // Раньше окно было привязано к фазе `install`, и это ломалось на втором
+  // resume подряд. Живой случай: установка 15.11.13 упала на ошибке dpkg
+  // (пакет при этом распаковался), первый resume прошёл сверку и начал шаг
+  // заново — то есть перевёл фазу в `backup`, — а бэкап упал. Дальше сверка
+  // сравнивала диск только с `expectedVersion` (15.4.6, версия предыдущего
+  // шага) и объявляла, что «сервер обновляли мимо инструмента». Ничего мимо
+  // инструмента не делали: 15.11.13 поставил он сам и сам об этом записал
+  // строкой ниже. Состояние противоречило себе, а человек оставался без
+  // resume посреди девятнадцатишагового пути.
+  //
+  // Фазу здесь спрашивать незачем: `installing` сам по себе и есть признак
+  // «этот шаг ещё не закрыт».
+  const allowed = [state.expectedVersion, state.installing].filter(Boolean);
   if (!allowed.includes(actual.version)) {
     return { ok: false, reason: 'version-mismatch', expected: allowed.join(' | '), actual: actual.version };
   }

@@ -123,3 +123,51 @@ test('сверка ловит смену редакции', () => {
 test('неизвестная версия на диске — не повод продолжать', () => {
   assert.equal(reconcile({ expectedVersion: 'x' }, null).reason, 'version-unknown');
 });
+
+/**
+ * Второй resume подряд.
+ *
+ * Живая последовательность с 19-шагового подъёма: установка 15.11.13 упала на
+ * ошибке dpkg, но пакет распаковался; первый resume сверку прошёл и начал шаг
+ * заново — фаза стала `backup`; бэкап упал. На втором resume сверка сравнивала
+ * диск только с expectedVersion (15.4.6, предыдущий шаг) и отвечала «сервер
+ * обновляли мимо инструмента». Мимо инструмента ничего не делали: 15.11.13
+ * поставил он сам и сам это записал в installing.
+ */
+test('после падения на фазе бэкапа resume не объявляет свою же установку чужой', () => {
+  const afterFailedInstall = {
+    edition: 'ee', expectedVersion: '15.4.6-ee.0', installing: '15.11.13-ee.0', phase: 'install',
+  };
+  const disk = { version: '15.11.13-ee.0', edition: 'ee' };
+  assert.equal(reconcile(afterFailedInstall, disk).ok, true, 'фаза install и раньше работала');
+
+  // Первый resume перевёл фазу в backup и на нём же упал.
+  const afterFailedBackup = { ...afterFailedInstall, phase: 'backup' };
+  const r = reconcile(afterFailedBackup, disk);
+  assert.equal(r.ok, true, 'та же версия, тот же незакрытый шаг — продолжать можно');
+  assert.equal(r.installedAhead, true, 'шаг уже установлен: это должно быть видно вызывающему');
+
+  // И на любой другой фазе незакрытого шага — тоже.
+  for (const phase of ['settle', 'done-step', undefined]) {
+    assert.equal(reconcile({ ...afterFailedInstall, phase }, disk).ok, true, `фаза ${phase}`);
+  }
+});
+
+test('чужое обновление всё так же не пропускается', () => {
+  // Послабление не должно превратиться в «принимаем что угодно»: между
+  // падением и resume сервер могли обновить руками, и тогда сохранённый план
+  // рассчитан не от той версии.
+  const state = { edition: 'ee', expectedVersion: '15.4.6-ee.0', installing: '15.11.13-ee.0', phase: 'backup' };
+  const bad = reconcile(state, { version: '16.3.9-ee.0', edition: 'ee' });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.reason, 'version-mismatch');
+  assert.equal(bad.expected, '15.4.6-ee.0 | 15.11.13-ee.0', 'сообщение обязано называть обе законные версии');
+});
+
+test('закрытый шаг сравнивается только с собой', () => {
+  // На settle installing снимается, и с этого момента законна ровно одна
+  // версия: любая другая на диске означает, что её поставили не мы.
+  const closed = { edition: 'ee', expectedVersion: '15.11.13-ee.0', installing: null, phase: 'backup' };
+  assert.equal(reconcile(closed, { version: '15.11.13-ee.0', edition: 'ee' }).ok, true);
+  assert.equal(reconcile(closed, { version: '15.4.6-ee.0', edition: 'ee' }).ok, false);
+});
