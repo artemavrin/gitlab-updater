@@ -19,7 +19,15 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # Именно тег, а не ветку. По умолчанию checkout берёт ref события: для
+      # push тега это сам тег, а для ручного запуска — HEAD ветки, из которой
+      # запустили. То есть workflow_dispatch собирал бы и публиковал НЕ то, что
+      # лежит в теге. Проверено вживую: запуск с тегом v0.1.16 при main на
+      # 0.1.18 упал на сверке версий, и это был лучший исход — совпади числа,
+      # под именем тега уехало бы содержимое ветки.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -37,6 +45,7 @@ jobs:
           echo "tag $tag, package.json $pkg"
           if [ "$tag" != "$pkg" ]; then
             echo "::error::The tag and package.json disagree: $tag vs $pkg."
+            echo "::error::This is the tree at $tag, so the tag sits on a commit carrying $pkg."
             echo "::error::Publishing would ship a bundle whose --version does not match its own release page."
             echo "::error::Bump package.json to ${tag#v}, push it, then move the tag onto that commit:"
             echo "::error::  git tag -d $tag && git push origin :refs/tags/$tag"

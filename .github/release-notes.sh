@@ -69,16 +69,19 @@ fails if they drift.
 
 ## Read this before the first real run
 
-**The upgrade has not been rehearsed against a live GitLab yet.** Everything
-known about its behaviour on a real instance comes from recorded responses and
-official documentation, checked by offline tests. Start with \`check\`, \`doctor\`
-and \`plan\`, then \`run --dry-run\`, and keep a snapshot of the machine — the
-tool prints that reminder itself, because migrations are irreversible and a
-backup is the only way back.
+**This is being driven against a live self-managed instance right now** — a
+19-step climb out of 13.12 — and several of the readiness checks exist because
+that climb broke on them: a package dpkg unpacked but never configured, an SMTP
+setting that a later version refuses, a PostgreSQL barrier that could not be
+cleared. Everything else still rests on recorded responses, official
+documentation and offline tests.
 
-\`rehearsal/\` contains the stand for a real dress rehearsal on a throwaway
-machine, if you would rather see it work before pointing it at anything you
-care about.
+Start with \`check\`, \`doctor\` and \`plan\`, then \`run --dry-run\`, and keep a
+snapshot of the machine — the tool prints that reminder itself, because
+migrations are irreversible and a backup is the only way back.
+
+\`rehearsal/\` contains the stand for a dress rehearsal on a throwaway machine,
+if you would rather see it work before pointing it at anything you care about.
 
 ---
 
