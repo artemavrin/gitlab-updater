@@ -1,0 +1,19 @@
+{
+  "verified_at": "2026-09-01",
+  "note": "Сочетания настроек /etc/gitlab/gitlab.rb, на которых reconfigure отказывается работать начиная с некоторой версии. Такое сочетание может лежать в файле годами: проверку добавляют позже, и обрывается она уже посреди подъёма — пакет остаётся распакованным и ненастроенным. Каждое правило сверено с исходником omnibus-gitlab на конкретных тегах, а не с документацией: документация не называет версию, в которой запрет появился.",
+  "rules": [
+    {
+      "id": "smtp-tls-starttls",
+      "since": "15.11.4",
+      "all_true": [
+        "gitlab_rails['smtp_enable']",
+        "gitlab_rails['smtp_tls']",
+        "gitlab_rails['smtp_enable_starttls_auto']"
+      ],
+      "docs": "https://docs.gitlab.com/omnibus/settings/smtp/",
+      "source": "https://gitlab.com/gitlab-org/omnibus-gitlab/-/commit/30be4382",
+      "since_note": "SmtpHelper.validate_smtp_settings! добавлен коммитом 30be4382 (2023-05-09). Файл files/gitlab-cookbooks/gitlab/libraries/smtp_helper.rb присутствует начиная с тега 15.11.4+ee.0 (в 15.11.3 его нет) и на master ушёл в 16.0.0. Между 15.11.4 и 16.0.0 версий без этой проверки не существует, поэтому одного порога 15.11.4 достаточно.",
+      "raises": "gitlab_rails['smtp_tls'] and gitlab_rails['smtp_enable_starttls_auto'] are mutually exclusive"
+    }
+  ]
+}

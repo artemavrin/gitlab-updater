@@ -35,6 +35,7 @@ import pkg from '../package.json' with { type: 'json' };
 import upgradePath from '../data/upgrade-path.json' with { type: 'json' };
 import osMatrix from '../data/os-matrix.json' with { type: 'json' };
 import pgRequirements from '../data/pg-requirements.json' with { type: 'json' };
+import rbConflicts from '../data/gitlab-rb-conflicts.json' with { type: 'json' };
 
 const VERSION = pkg.version;
 
@@ -185,7 +186,7 @@ async function main(argv) {
 
   const ctx = {
     exec, t, flags, args, config, sources, bus, confPath, paint,
-    data: { upgradePath, osMatrix, pgRequirements },
+    data: { upgradePath, osMatrix, pgRequirements, rbConflicts },
     osPath: '/etc/os-release',
     dataPath: new URL('../data/upgrade-path.json', import.meta.url).pathname,
   };

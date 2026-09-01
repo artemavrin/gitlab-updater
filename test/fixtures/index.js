@@ -1,6 +1,8 @@
 import { MIGRATION_QUERY } from '../../src/steps/settle.js';
 import { APT_LOCKS } from '../../src/checks/index.js';
 import { dpkgQuery, DPKG_INSTALLED } from '../../src/detect/gitlab.js';
+import rbConflicts from '../../data/gitlab-rb-conflicts.json' with { type: 'json' };
+import { settingsGrep } from '../../src/detect/gitlabRb.js';
 /** Записанные выводы реальных команд. Ключ фикстуры — сама команда. */
 export const madison1711 = `
    gitlab-ee | 17.11.6-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
@@ -85,6 +87,8 @@ export function checkFixtures({ migrations = '0 0 batched', pg = 'psql (PostgreS
     'gitlab-psql --version': { code: 0, stdout: pg },
     // Встроенный PostgreSQL: строки postgresql['enable'] в gitlab.rb нет.
     "grep -E ^\\s*postgresql\\['enable'\\] /etc/gitlab/gitlab.rb": { code: 1, stdout: '' },
+    // Ключ строим тем же кодом, что и проверка: копия разошлась бы молча.
+    [settingsGrep([...new Set(rbConflicts.rules.flatMap((r) => r.all_true))]).join(' ')]: { code: 1, stdout: '' },
     ...extra,
   };
 }

@@ -15,6 +15,7 @@ const data = {
   upgradePath: JSON.parse(readFileSync('data/upgrade-path.json', 'utf8')),
   osMatrix: JSON.parse(readFileSync('data/os-matrix.json', 'utf8')),
   pgRequirements: JSON.parse(readFileSync('data/pg-requirements.json', 'utf8')),
+  rbConflicts: JSON.parse(readFileSync('data/gitlab-rb-conflicts.json', 'utf8')),
 };
 
 const dir = mkdtempSync(join(tmpdir(), 'glu-'));

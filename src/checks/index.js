@@ -1,6 +1,7 @@
 import { LEVEL } from '../core/events.js';
 import { detectServices, detectPostgres, missingKeyServices, parsePgVersion } from '../detect/services.js';
 import { inMultiplexer } from '../detect/session.js';
+import { readSettings, firstConflict } from '../detect/gitlabRb.js';
 import { describeChannels } from '../notify/index.js';
 import { policyFor } from '../plan/planner.js';
 import { freeBytes, toGb, GB } from '../detect/disk.js';
@@ -84,6 +85,31 @@ export const CHECKS = [
         status: gitlabInfo.status,
         version: gitlabInfo.aptVersion,
       });
+    },
+  },
+
+  {
+    id: 'gitlab-rb',
+    depth: DEPTH.FAST,
+    async run({ exec, plan, data }) {
+      // Настройка, которую нынешняя версия принимает, а версия с пути — уже
+      // нет. Обрывается это внутри reconfigure, то есть после установки
+      // пакета: дальше пакет остаётся ненастроенным, миграции не проходят, а
+      // следующий бэкап падает на схеме. Найти это стоит до бэкапа —
+      // настройка лежит в файле, а версия запрета известна заранее.
+      const rules = data?.rbConflicts?.rules ?? [];
+      const steps = plan?.steps ?? [];
+      if (!rules.length || !steps.length) return ok('gitlab-rb');
+
+      const settings = await readSettings(exec, [...new Set(rules.flatMap((r) => r.all_true ?? []))]);
+      // Файла нет или не хватило прав — это «не знаем», и выдавать это за
+      // «в порядке» нельзя: под обычным пользователем gitlab.rb не читается.
+      if (!settings) return warn('gitlab-rb-unreadable');
+
+      const hit = firstConflict(rules, settings, steps);
+      return hit
+        ? critical(`rb-${hit.rule.id}`, { step: hit.step, since: hit.rule.since })
+        : ok('gitlab-rb');
     },
   },
 

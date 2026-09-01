@@ -35,6 +35,7 @@ const DOCS = {
   // и для текущих версий мёртв; таблица поддерживаемых ОС живёт здесь.
   os: 'https://docs.gitlab.com/install/package/',
   install: 'https://docs.gitlab.com/install/package/',
+  smtp: 'https://docs.gitlab.com/omnibus/settings/smtp/',
 };
 
 /**
@@ -84,6 +85,11 @@ export const REMEDIES = {
   'postgres-external.critical': read('pg-external', DOCS.pgExternal),
   'postgres-external.warn': read('pg-external', DOCS.pgExternal),
 
+  // Правка gitlab.rb — не команда: какую из двух настроек выключить, решает
+  // порт почтового сервера, и угадывать его за человека нельзя. Текст находки
+  // называет оба варианта, здесь остаётся документация.
+  'rb-smtp-tls-starttls.critical': read('rb-smtp-tls', DOCS.smtp),
+
   'os-ceiling.warn': flag('safe-for-os', '--safe-for-os', DOCS.os),
   'session.warn': flag('detach', '--detach'),
   // Своя же команда: она и найдёт chat id, и запишет его.
@@ -117,6 +123,7 @@ export const NO_REMEDY = new Set([
   'postgres-unknown.warn',
   'disk-unknown.warn',
   'check-failed.warn',
+  'gitlab-rb-unreadable.warn', // gitlab.rb не прочитан: чинить нечего, это сообщение о незнании
   // Рубежи прокси: чинится настройкой сети, а не командой на сервере.
   // Сообщение каждого называет, что именно не сошлось.
   'proxy-config.critical',

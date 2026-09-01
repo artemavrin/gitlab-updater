@@ -8,6 +8,7 @@ import { createTranslator } from '../src/i18n/index.js';
 import { commandRun, commandResume } from '../src/commands/run.js';
 import { detectGitlab } from '../src/detect/gitlab.js';
 import { blockerLines } from '../src/render/findings.js';
+import { settingsGrep } from '../src/detect/gitlabRb.js';
 import { loadState, saveState, statePath } from '../src/core/state.js';
 import { acquireLock } from '../src/core/lock.js';
 import { EXIT } from '../src/plan/planner.js';
@@ -20,6 +21,7 @@ const data = {
   upgradePath: JSON.parse(readFileSync('data/upgrade-path.json', 'utf8')),
   osMatrix: JSON.parse(readFileSync('data/os-matrix.json', 'utf8')),
   pgRequirements: JSON.parse(readFileSync('data/pg-requirements.json', 'utf8')),
+  rbConflicts: JSON.parse(readFileSync('data/gitlab-rb-conflicts.json', 'utf8')),
 };
 const STAMP = '20260831-0900';
 
@@ -635,6 +637,74 @@ test('--force не снимает недоделанную установку', 
   // бэкапу, которого не будет.
   const { ctx, calls } = bed({ dpkgStatus: 'install ok unpacked', flags: { force: true } });
   ctx.gitlabInfo = await detectGitlab(ctx.exec);
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'checks-failed');
+  assert.ok(!calls.some((c) => /^(gitlab-backup|apt-get install)/.test(c)));
+});
+
+/**
+ * Несовместимая настройка gitlab.rb на пути.
+ *
+ * Тот же живой случай с другой стороны: шаг 7 из 19 упал не в apt, а внутри
+ * reconfigure — `smtp_tls` и `smtp_enable_starttls_auto` включены оба, и с
+ * 15.11.4 это отвергается. Настройка лежит в файле, версия запрета известна:
+ * узнать об этом можно было до первого бэкапа.
+ */
+test('несовместимая настройка gitlab.rb останавливает до старта', async () => {
+  const both = [
+    "gitlab_rails['smtp_enable'] = true",
+    "gitlab_rails['smtp_tls'] = true",
+    "gitlab_rails['smtp_enable_starttls_auto'] = true",
+  ].join('\n');
+  const keys = [...new Set(data.rbConflicts.rules.flatMap((r) => r.all_true))];
+  const { ctx, calls } = bed({
+    version: '15.11.4-ee.0',
+    extra: { [settingsGrep(keys).join(' ')]: { code: 0, stdout: both } },
+  });
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'checks-failed', r.lines.join('\n'));
+  assert.ok(!calls.some((c) => /^(gitlab-backup|apt-get install)/.test(c)), 'начали подъём, который оборвётся внутри reconfigure');
+
+  const found = r.result.findings.find((f) => f.id === 'rb-smtp-tls-starttls');
+  assert.ok(found, JSON.stringify(r.result.findings.map((f) => f.id)));
+  assert.equal(found.params.since, '15.11.4');
+  // Человеку названы обе половины: что выключить и по какому признаку выбрать.
+  const shown = blockerLines(r.result.findings, ctx.t).map((l) => l.text).join('\n');
+  assert.match(shown, /465/);
+  assert.match(shown, /587/);
+  assert.match(shown, /docs\.gitlab\.com/);
+});
+
+test('нечитаемый gitlab.rb — предупреждение, а не запрет', async () => {
+  // Отсутствие ответа не приговор: объявить сервер сломанным из-за того, что
+  // мы чего-то не прочитали, хуже, чем сказать об этом вслух. Но и молчать
+  // нельзя — непроверенное не то же самое, что проверенное.
+  const keys = [...new Set(data.rbConflicts.rules.flatMap((r) => r.all_true))];
+  const unreadable = { [settingsGrep(keys).join(' ')]: { code: 2, stdout: '' } };
+
+  const { ctx } = bed({ extra: unreadable });
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'warnings-not-accepted', r.lines.join('\n'));
+  assert.ok(r.result.findings.some((f) => f.id === 'gitlab-rb-unreadable' && f.level === 'warn'));
+
+  // И --force его снимает — в отличие от самого конфликта.
+  const forced = bed({ extra: unreadable, flags: { force: true } });
+  assert.equal((await commandRun(forced.ctx)).code, EXIT.CURRENT);
+});
+
+test('--force не снимает несовместимую настройку gitlab.rb', async () => {
+  // Это не шум: продолжение отсюда обрывается внутри reconfigure, уже после
+  // установки пакета, и оставляет его ненастроенным.
+  const both = [
+    "gitlab_rails['smtp_enable'] = true",
+    "gitlab_rails['smtp_tls'] = true",
+    "gitlab_rails['smtp_enable_starttls_auto'] = true",
+  ].join('\n');
+  const keys = [...new Set(data.rbConflicts.rules.flatMap((r) => r.all_true))];
+  const { ctx, calls } = bed({
+    version: '15.11.4-ee.0', flags: { force: true },
+    extra: { [settingsGrep(keys).join(' ')]: { code: 0, stdout: both } },
+  });
   const r = await commandRun(ctx);
   assert.equal(r.errorCode, 'checks-failed');
   assert.ok(!calls.some((c) => /^(gitlab-backup|apt-get install)/.test(c)));

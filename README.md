@@ -122,19 +122,23 @@ Notifications go to Telegram, Slack or a plain webhook, configured through `/etc
 $ sudo gitlab-upgrade doctor
 
    ✓  root privileges       present
+   ✓  GitLab package        17.11.4-ee.0 - installed and configured
    ✓  GitLab services       12/12 running
    ✓  background migrations none outstanding
+   ✓  gitlab.rb             no incompatible settings found
    ✓  gitlab-secrets.json   present
    ✓  disk space            142.1 GB free
    !  session               SSH without tmux: a dropped connection ends the watch
    ✓  PostgreSQL            15.6
 
-   9 passed · 1 warnings · 0 critical
+   11 passed · 1 warnings · 0 critical
 ```
 
 `plan` runs the same checks before showing the path, because a plan divorced from readiness is misleading. Critical findings change the exit code to 1 with `checks-failed` while still printing the plan — it is informative even when it cannot be executed right now.
 
 Depth follows the profile: a patch pays for the fast set only, since four minutes of ceremony for twelve minutes of work is how a tool stops being used for routine updates.
+
+Two of these exist because a real 19-step climb broke on them. **GitLab package** asks dpkg for `${Status}`, not only `${Version}`: a package that dpkg unpacked but never finished configuring still answers with a version, and continuing from there means backing up new code against an old schema. **gitlab.rb** looks for setting combinations that a version on the path refuses to accept - `gitlab_rails['smtp_tls']` together with `gitlab_rails['smtp_enable_starttls_auto']` is rejected from 15.11.4 on, and the refusal happens inside `reconfigure`, after the package is installed. Both are found before the first backup rather than in the middle of the climb, and neither is waivable with `--force`.
 
 Two rules that do not bend. A failed background migration is critical and `--force` does not clear it — the next step would migrate over unfinished data. And an unknown state is a warning, never an ok: if the migration query fails, the tool says so rather than reporting all clear.
 
