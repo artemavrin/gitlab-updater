@@ -4,7 +4,7 @@ Safe upgrades for self-managed **GitLab Omnibus** on Ubuntu and Debian — the r
 
 Русская версия: [README.ru.md](README.ru.md)
 
-> **Status: phases 0-3.6.** Detection, planning, readiness checks, backup, install, migration waiting, state, resume, notifications, detach, the terminal screens and proxy diagnostics all work, covered by 266 offline tests. `run` changes the server; everything else is read-only. Not yet rehearsed against a live GitLab — see [rehearsal/](rehearsal/README.md).
+> **Status: phases 0-3.6.** Detection, planning, readiness checks, backup, install, migration waiting, state, resume, notifications, detach, the terminal screens and proxy diagnostics all work, covered by 388 offline tests. `run` changes the server; everything else is read-only. Now being driven against a live self-managed instance on a 19-step climb from 13.12 — several checks in this README exist because that climb broke on them.
 
 ## Why
 
