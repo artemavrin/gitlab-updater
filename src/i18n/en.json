@@ -514,5 +514,6 @@
   "event.predownload.percent": "{index}/{of} · {version} · {percent}%",
   "event.predownload.what": "{index}/{of} · {what} · {percent}%",
   "event.install.download": "{version} · downloading {percent}%",
-  "event.install.install": "{version} · {note} · {percent}%"
+  "event.install.install": "{version} · {note} · {percent}%",
+  "run.stop.output": "Full command output: {path}"
 }

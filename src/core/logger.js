@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { appendFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { redact } from './redact.js';
 
@@ -42,4 +42,36 @@ export function latestJournal(dir) {
     }
   } catch { /* каталога ещё нет — значит и запусков не было */ }
   return best?.path ?? null;
+}
+
+/**
+ * Полный вывод упавшей команды — в отдельный файл рядом с журналом.
+ *
+ * `E: Sub-process /usr/bin/dpkg returned an error code (1)` и
+ * `Backup::Error: gitaly-backup exit status 1` — это итог, а не причина.
+ * Причина всегда на несколько строк выше, и до сих пор она просто пропадала:
+ * exec собирал вывод, отдавал одну строку на экран и терял остальное. Человек
+ * оставался с констатацией отказа и без единой зацепки.
+ *
+ * Права 0600: в выводе бывает и пароль прокси, и содержимое конфигов.
+ */
+export function saveFailure({ dir, stamp, err, secrets = [] }) {
+  const r = err?.result ?? {};
+  const body = [
+    `# ${new Date().toISOString()}`,
+    `# ${Array.isArray(r.argv) ? r.argv.join(' ') : String(r.argv ?? '')}`,
+    `# exit ${r.code ?? '?'}`,
+    '',
+    '--- stdout ---', String(r.stdout ?? ''),
+    '--- stderr ---', String(r.stderr ?? ''),
+  ].join('\n');
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o750 });
+    const path = join(dir, `failed-${stamp}.log`);
+    writeFileSync(path, redact(body, secrets), { mode: 0o600 });
+    return path;
+  } catch {
+    // Не смогли сохранить — не повод потерять и саму остановку.
+    return null;
+  }
 }

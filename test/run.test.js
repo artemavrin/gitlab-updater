@@ -511,3 +511,63 @@ test('пароль прокси не утекает из жалобы apt', asyn
   assert.ok(!text.includes('s3cret'), text);
   assert.match(text, /svc:\*\*\*@/);
 });
+
+/**
+ * Настоящие остановки с боевой машины:
+ *
+ *   apt-get install … → 100: E: Sub-process /usr/bin/dpkg returned an error code (1)
+ *   gitlab-backup create SKIP=… → 1: Backup::Error: gitaly-backup exit status 1
+ *
+ * Обе строки — итог, а не причина: настоящая ошибка на несколько строк выше и
+ * до сих пор пропадала целиком. exec собирал вывод, отдавал одну строку на
+ * экран и терял остальное — человек оставался с констатацией отказа и без
+ * единой зацепки, посреди девятнадцатишагового подъёма.
+ */
+test('полный вывод упавшей команды сохраняется и называется', async () => {
+  const { ctx, dir } = bed();
+  const real = ctx.exec;
+  ctx.exec = async (argv, opts) => {
+    if (argv.join(' ').startsWith('gitlab-backup')) {
+      throw new ExecError('exec-failed', {
+        code: 1, argv: argv.join(' '),
+        stdout: 'Dumping repositories ...\nERROR: repository /var/opt/gitlab/git-data/x.git is broken\n',
+        stderr: 'Backup::Error: gitaly-backup exit status 1\n',
+      });
+    }
+    return real(argv, opts);
+  };
+  ctx.config.logDir = dir;
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'step-failed');
+
+  const text = r.lines.join('\n');
+  const path = /(\S*failed-\S+\.log)/.exec(text)?.[1];
+  assert.ok(path, `путь к выводу не назван:\n${text}`);
+  const saved = readFileSync(path, 'utf8');
+  // В файле обязана быть та строка, которой нет на экране.
+  assert.match(saved, /repository .* is broken/);
+  assert.match(saved, /gitaly-backup exit status 1/);
+  assert.match(saved, /gitlab-backup create/);
+});
+
+test('в сохранённом выводе нет пароля прокси', async () => {
+  // Туда попадает всё, что напечатала команда, — включая её аргументы и
+  // жалобы на сеть. Файл потом целиком уходит в тикет.
+  const { ctx, dir } = bed();
+  const real = ctx.exec;
+  ctx.exec = async (argv, opts) => {
+    if (argv.join(' ').startsWith('gitlab-backup')) {
+      throw new ExecError('exec-failed', {
+        code: 1, argv: argv.join(' '), stdout: '',
+        stderr: 'E: не дошло через socks5h://svc:s3cret@10.0.0.5:1080\n',
+      });
+    }
+    return real(argv, opts);
+  };
+  ctx.config.logDir = dir;
+  const r = await commandRun(ctx);
+  const path = /(\S*failed-\S+\.log)/.exec(r.lines.join('\n'))?.[1];
+  const saved = readFileSync(path, 'utf8');
+  assert.ok(!saved.includes('s3cret'), saved);
+  assert.match(saved, /svc:\*\*\*@/);
+});

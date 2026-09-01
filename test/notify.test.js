@@ -287,3 +287,13 @@ test('у наполовину настроенного канала есть п�
   const r = remedyFor({ id: 'notify-partial', level: 'warn', params: { missing: 'telegram-chat' } });
   assert.deepEqual(r?.argv, ['gitlab-upgrade', 'notify', 'chat', '--yes']);
 });
+
+test('причина недоставки не бывает пустой', async () => {
+  const { whyFailed } = await import('../src/notify/index.js');
+  // С боевой машины пришло «Уведомление не доставлено (telegram):» — и всё.
+  // Строка, ради которой человек полезет в журнал, а там её тоже нет.
+  assert.equal(whyFailed(new Error('')), 'unknown');
+  assert.equal(whyFailed(Object.assign(new Error(''), { code: 'ECONNRESET' })), 'ECONNRESET');
+  assert.equal(whyFailed(undefined), 'unknown');
+  assert.match(whyFailed(new Error('socket hang up')), /socket hang up/);
+});

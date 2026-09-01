@@ -3,6 +3,8 @@ import { acquireLock, LockedError } from '../core/lock.js';
 import { saveState, clearState, loadState, reconcile } from '../core/state.js';
 import { runChecks, DEPTH, blocked, gate } from '../checks/index.js';
 import { execFailure } from '../core/exec.js';
+import { saveFailure } from '../core/logger.js';
+import { LOG_DIR } from '../cli/config.js';
 import { runBackup, MODE as BACKUP } from '../steps/backup.js';
 import { installVersion, predownload, updateLists, holdArgv, releaseHold } from '../steps/install.js';
 import { waitServices, waitMigrations, MigrationsFailed } from '../steps/settle.js';
@@ -266,10 +268,19 @@ export async function commandRun(ctx, { resuming = false } = {}) {
     // смотрят. Раньше здесь был машинный err.message, и человек оставался с
     // кодом 100 без слова о причине.
     const said = execFailure(err);
+    // Одной строки для dpkg и gitaly не хватает: «returned an error code (1)» —
+    // это итог, а причина на несколько строк выше. Полный вывод сохраняем и
+    // называем файл: без него человеку нечего читать.
+    const saved = saveFailure({
+      dir: config.logDir ?? LOG_DIR, stamp: stamp(), err, secrets: ctx.secrets ?? [],
+    });
     bus?.emit({ t: 'run:stopped', reason: 'step-failed', detail: said, version: null, backup: null });
     return {
       code: EXIT.ERROR, errorCode: 'step-failed', detail: said,
-      lines: [...lines, ` ${t('run.stop.step-failed', { detail: said })}`, '', `   ${t('run.stop.resumeHint')}`],
+      lines: [...lines,
+        ` ${t('run.stop.step-failed', { detail: said })}`,
+        ...(saved ? ['', `   ${t('run.stop.output', { path: saved })}`] : []),
+        '', `   ${t('run.stop.resumeHint')}`],
     };
   } finally {
     lock.release();

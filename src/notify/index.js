@@ -81,6 +81,14 @@ export function compose(t, kind, params) {
  * описание, прогнанные через redact: сообщение уходит на stderr, а оттуда — в
  * системный журнал и в чужие тикеты.
  */
+/** Причина отказа отправки — непустая всегда: код, имя или хоть что-нибудь. */
+export function whyFailed(err) {
+  // Имя берём только осмысленное: голое «Error» — не причина, а слово.
+  const name = err?.name && err.name !== 'Error' ? err.name : null;
+  const said = [err?.message, err?.code, name].map((x) => String(x ?? '').trim()).find(Boolean);
+  return redact(said || 'unknown', []);
+}
+
 export function httpFailure(res, channel = null, limit = 120) {
   const status = Number(res?.status);
   if (!Number.isFinite(status) || status < 400) return null;
@@ -120,7 +128,10 @@ export function createNotifier({ bus, t, channels, allow = null, allowFor = null
             const bad = httpFailure(res, channel);
             if (bad) onError?.({ channel: channel.kind, error: bad });
           })
-          .catch((err) => onError?.({ channel: channel.kind, error: err.message }))
+          // Пустого сообщения быть не должно: «Уведомление не доставлено
+          // (telegram):» без причины — это строка, ради которой человек
+          // потом лезет в журнал, и там её тоже нет.
+          .catch((err) => onError?.({ channel: channel.kind, error: whyFailed(err) }))
       );
     }
   };
