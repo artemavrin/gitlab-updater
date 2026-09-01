@@ -60,6 +60,34 @@ export const CHECKS = [
   },
 
   {
+    id: 'dpkg',
+    depth: DEPTH.FAST,
+    async run({ gitlabInfo }) {
+      // Пакет может быть распакован и не настроен: установка падает на
+      // `Sub-process /usr/bin/dpkg returned an error code (1)`, новый код уже
+      // лежит на диске, а `gitlab-ctl reconfigure` с миграциями не отработал.
+      // Схема при этом старая, и первое же обращение нового кода к базе даёт
+      // `relation ... does not exist` — в том числе внутри бэкапа, то есть
+      // ровно там, где обычно и обнаруживают, что бэкапа нет.
+      //
+      // Проверка стоит до бэкапа и до установки: продолжать поверх
+      // недоделанной установки нельзя ни в каком режиме.
+      //
+      // Нестрогое сравнение намеренно: и null, и отсутствие поля значат
+      // «состояние неизвестно». Выдумывать здесь «всё хорошо» нельзя, но и
+      // объявлять пакет сломанным потому, что о нём просто не спросили, —
+      // значит останавливать исправный сервер.
+      if (!gitlabInfo || gitlabInfo.installed == null) return ok('dpkg-unknown');
+      if (gitlabInfo.installed) return ok('dpkg', { version: gitlabInfo.aptVersion });
+      return critical('dpkg-broken', {
+        pkg: gitlabInfo.package,
+        status: gitlabInfo.status,
+        version: gitlabInfo.aptVersion,
+      });
+    },
+  },
+
+  {
     id: 'services',
     depth: DEPTH.FAST,
     async run({ exec }) {

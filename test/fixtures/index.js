@@ -1,5 +1,6 @@
 import { MIGRATION_QUERY } from '../../src/steps/settle.js';
 import { APT_LOCKS } from '../../src/checks/index.js';
+import { dpkgQuery, DPKG_INSTALLED } from '../../src/detect/gitlab.js';
 /** Записанные выводы реальных команд. Ключ фикстуры — сама команда. */
 export const madison1711 = `
    gitlab-ee | 17.11.6-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages
@@ -94,17 +95,30 @@ export const dfTight = `Filesystem       1B-blocks          Avail Mounted on
 /dev/sda1      107374182400    65498251264 /
 `;
 
+/**
+ * Маленький dpkg: подставляет поля в тот самый формат, который просит
+ * продакшен. Полей ровно два — больше мы не спрашиваем.
+ */
+function dpkgOutput(pkg, version, status) {
+  const format = dpkgQuery(pkg).find((a) => a.startsWith('-f=')).slice('-f='.length);
+  return format.replaceAll('${Version}', version).replaceAll('${Status}', status);
+}
+
 /** Набор для exec в режиме replay. */
-export function fixturesFor({ version = '17.11.4-ee.0', pkg = 'gitlab-ee', madison = madison1711, status = ctlStatusHealthy } = {}) {
+export function fixturesFor({ version = '17.11.4-ee.0', pkg = 'gitlab-ee', madison = madison1711, status = ctlStatusHealthy, dpkgStatus = DPKG_INSTALLED } = {}) {
   const set = {
-    [`dpkg-query -W -f=\${Version} ${pkg}`]: { code: 0, stdout: version },
+    // И ключ, и ответ строим по настоящей команде: не только имя, но и
+    // формат -f. Иначе фикстура отдавала бы состояние пакета даже там, где
+    // продакшен его не запрашивает, — и тест на недонастроенный пакет
+    // проходил бы при детекторе, который состояние не спрашивает вовсе.
+    [dpkgQuery(pkg).join(' ')]: { code: 0, stdout: dpkgOutput(pkg, version, dpkgStatus) },
     'apt-cache madison gitlab-ee': { code: 0, stdout: madison },
     'apt-cache madison gitlab-ce': { code: 0, stdout: '' },
     'gitlab-ctl status': { code: 0, stdout: status },
     'df -B1 --output=source,size,avail,target /var/opt/gitlab /': { code: 0, stdout: dfOutput },
   };
   for (const other of ['gitlab-ee', 'gitlab-ce']) {
-    if (other !== pkg) set[`dpkg-query -W -f=\${Version} ${other}`] = { code: 1, stdout: '' };
+    if (other !== pkg) set[dpkgQuery(other).join(' ')] = { code: 1, stdout: '' };
   }
   return set;
 }

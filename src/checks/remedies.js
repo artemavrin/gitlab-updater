@@ -65,6 +65,9 @@ export const REMEDIES = {
 
   // apt-mark hold и таймеры apt — наша практика, а не документация GitLab.
   'apt-busy.critical': run('who-holds-dpkg', ['fuser', '-v', '/var/lib/dpkg/lock-frontend']),
+  // Штатный способ Debian доделать прерванную установку. Не из документации
+  // GitLab — её тут и нет, пакет ломается на уровне dpkg, а не GitLab.
+  'dpkg-broken.critical': run('dpkg-configure', ['dpkg', '--configure', '-a']),
   'apt-timer.warn': run('stop-apt-timer', ['systemctl', 'stop', 'apt-daily.timer', 'apt-daily-upgrade.timer']),
 
   // Только для встроенного PostgreSQL: для внешнего процедура другая, и

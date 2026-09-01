@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { createExec, MODE, ExecError } from '../src/core/exec.js';
 import { createTranslator } from '../src/i18n/index.js';
 import { commandRun, commandResume } from '../src/commands/run.js';
+import { detectGitlab } from '../src/detect/gitlab.js';
+import { blockerLines } from '../src/render/findings.js';
 import { loadState, saveState, statePath } from '../src/core/state.js';
 import { acquireLock } from '../src/core/lock.js';
 import { EXIT } from '../src/plan/planner.js';
@@ -27,12 +29,12 @@ const tickingClock = () => {
 };
 const RUNNER = `gitlab-rails runner -e production ${MIGRATION_QUERY}`;
 
-function bed({ version = '17.11.4-ee.0', extra = {}, flags = {} } = {}) {
+function bed({ version = '17.11.4-ee.0', extra = {}, flags = {}, dpkgStatus = undefined } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'glu-run-'));
   writeFileSync(join(dir, 'os-release'), osReleaseJammy);
   const calls = [];
   const fixtures = {
-    ...fixturesFor({ version }), ...checkFixtures(),
+    ...fixturesFor({ version, ...(dpkgStatus ? { dpkgStatus } : {}) }), ...checkFixtures(),
     'apt-get update': { code: 0, stdout: '' },
     'gitlab-ctl status': { code: 0, stdout: ctlStatusHealthy },
     [RUNNER]: { code: 0, stdout: '0 0 batched' },
@@ -570,4 +572,70 @@ test('в сохранённом выводе нет пароля прокси', 
   const saved = readFileSync(path, 'utf8');
   assert.ok(!saved.includes('s3cret'), saved);
   assert.match(saved, /svc:\*\*\*@/);
+});
+
+/**
+ * Недонастроенный пакет.
+ *
+ * На живом сервере установка 15.11.13 упала на `Sub-process /usr/bin/dpkg
+ * returned an error code (1)`: новый код распакован, `gitlab-ctl reconfigure`
+ * с миграциями не отработал, схема осталась старой. `dpkg-query -W
+ * -f=${Version}` при этом отвечал «15.11.13», инструмент считал шаг
+ * выполненным, и `resume` пошёл делать бэкап — который упал на `relation
+ * "design_management_repositories" does not exist`. То есть в момент, когда
+ * бэкап был нужнее всего, его не сделали.
+ *
+ * gitlabInfo здесь берётся настоящим детектором, а не собирается руками:
+ * проверка обязана ломаться вместе с детектором, а не переживать его.
+ */
+test('распакованный, но не настроенный пакет останавливает до бэкапа', async () => {
+  const { ctx, calls } = bed({ dpkgStatus: 'install ok unpacked' });
+  ctx.gitlabInfo = await detectGitlab(ctx.exec);
+  assert.equal(ctx.gitlabInfo.installed, false);
+
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'checks-failed', r.lines.join('\n'));
+  assert.ok(!calls.some((c) => /^(gitlab-backup|apt-get install)/.test(c)),
+    'поверх недоделанной установки выполнены изменяющие команды');
+  // Починку человек видит блоком блокеров, который bin печатает по
+  // result.findings, — там она и проверяется.
+  const found = r.result.findings.find((f) => f.id === 'dpkg-broken');
+  assert.deepEqual(found.remedy.argv, ['dpkg', '--configure', '-a']);
+  const shown = blockerLines(r.result.findings, ctx.t).map((l) => l.text).join('\n');
+  assert.match(shown, /dpkg --configure -a/, 'человеку не сказано, чем это чинится');
+});
+
+test('resume тоже не идёт поверх недоделанной установки', async () => {
+  // Ровно тот путь, которым и прошло падение: `run` упал на установке,
+  // человек запускает `resume`, а первый же шаг resume — бэкап.
+  const { ctx, dir, calls } = bed({ version: '17.11.4-ee.0', dpkgStatus: 'install ok half-configured' });
+  ctx.gitlabInfo = await detectGitlab(ctx.exec);
+  saveState(dir, {
+    pkg: 'gitlab-ee', edition: 'ee', expectedVersion: '17.11.4-ee.0',
+    from: '17.11.4-ee.0', target: '17.11.6-ee.0', profile: 'patch',
+    steps: [{ version: '17.11.6-ee.0', reason: 'target' }],
+    stepIndex: 0, phase: 'backup', backups: [],
+  });
+  const r = await commandResume(ctx);
+  assert.equal(r.errorCode, 'checks-failed', r.lines.join('\n'));
+  assert.ok(!calls.some((c) => c.startsWith('gitlab-backup')), 'бэкап новым кодом по старой схеме');
+});
+
+test('исправный пакет проверку не задевает', async () => {
+  // Обратная сторона: проверка, которая останавливает здоровый сервер, хуже
+  // отсутствующей — её снимут вместе со всеми остальными через --force.
+  const { ctx } = bed();
+  ctx.gitlabInfo = await detectGitlab(ctx.exec);
+  assert.equal(ctx.gitlabInfo.installed, true);
+  assert.equal((await commandRun(ctx)).code, EXIT.CURRENT);
+});
+
+test('--force не снимает недоделанную установку', async () => {
+  // Это не «шум, который можно проигнорировать»: продолжение отсюда ведёт к
+  // бэкапу, которого не будет.
+  const { ctx, calls } = bed({ dpkgStatus: 'install ok unpacked', flags: { force: true } });
+  ctx.gitlabInfo = await detectGitlab(ctx.exec);
+  const r = await commandRun(ctx);
+  assert.equal(r.errorCode, 'checks-failed');
+  assert.ok(!calls.some((c) => /^(gitlab-backup|apt-get install)/.test(c)));
 });
