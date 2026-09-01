@@ -11,6 +11,10 @@ on:
       tag:
         description: 'Release tag, for example v0.1.0'
         required: true
+      ref:
+        description: 'Commit or branch to tag, when the tag does not exist yet. Leave empty to release an existing tag.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -19,15 +23,19 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      # Именно тег, а не ветку. По умолчанию checkout берёт ref события: для
-      # push тега это сам тег, а для ручного запуска — HEAD ветки, из которой
-      # запустили. То есть workflow_dispatch собирал бы и публиковал НЕ то, что
-      # лежит в теге. Проверено вживую: запуск с тегом v0.1.16 при main на
-      # 0.1.18 упал на сверке версий, и это был лучший исход — совпади числа,
-      # под именем тега уехало бы содержимое ветки.
+      # Дерево релиза — это дерево тега. checkout без ref взял бы ref события:
+      # для push тега это сам тег, а для ручного запуска — HEAD ветки, из
+      # которой запустили. То есть workflow_dispatch собирал и публиковал бы
+      # под именем тега содержимое main. Проверено вживую: запуск с тегом
+      # v0.1.16 при main на 0.1.18 упал на сверке версий, и это был лучший из
+      # исходов — совпади числа, подмена прошла бы молча.
+      #
+      # `ref` у ручного запуска — для тега, которого ещё нет: называют коммит,
+      # workflow сам его и пометит. Без этого выпуск релиза требовал локального
+      # клона, чтобы сделать один git push тега.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -52,6 +60,34 @@ jobs:
             echo "::error::  git tag -a $tag -m 'gitlab-upgrade ${tag#v}' && git push origin $tag"
             exit 1
           fi
+
+      - name: Create the tag, when releasing a commit that has none
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          REF: ${{ github.event.inputs.ref }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            if [ -n "$REF" ]; then
+              echo "::error::Tag $TAG already exists, so the tree came from $REF instead of the tag."
+              echo "::error::Re-run with an empty 'ref' to release the tag as it stands."
+              exit 1
+            fi
+            echo "Tag $TAG already exists; releasing it as it stands."
+            exit 0
+          fi
+          if [ -z "$REF" ]; then
+            echo "::error::Tag $TAG does not exist and no 'ref' was given."
+            echo "::error::Re-run and name the commit or branch to tag in 'ref'."
+            exit 1
+          fi
+          # Версия уже сверена шагом выше, и сверена по этому же дереву:
+          # тег встаёт ровно на тот коммит, который эту версию несёт.
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a "$TAG" -m "gitlab-upgrade ${TAG#v}"
+          git push origin "$TAG"
+          echo "Tagged $(git rev-parse --short HEAD) as $TAG."
 
       - name: Build the single file
         run: npm run build
