@@ -259,7 +259,11 @@ export async function commandRun(ctx, { resuming = false } = {}) {
   } catch (err) {
     if (err instanceof MigrationsFailed) {
       bus?.emit({ t: 'run:stopped', reason: 'migrations-failed', detail: err.message, version: null, backup: null });
-      return { code: EXIT.ERROR, errorCode: 'migrations-failed', lines: [...lines, ` ${t('run.stop.migrations-failed', { n: err.count })}`, '', `   ${t('run.stop.resumeHint')}`] };
+      const key = err.which ? 'run.stop.migrations-failed-named' : 'run.stop.migrations-failed';
+      return {
+        code: EXIT.ERROR, errorCode: 'migrations-failed',
+        lines: [...lines, ` ${t(key, { n: err.count, detail: err.which ?? '' })}`, '', `   ${t('run.stop.resumeHint')}`],
+      };
     }
     // Падение apt-get или gitlab-backup — самый вероятный исход, и именно
     // там подсказка про resume нужнее всего. Терять её в общем обработчике

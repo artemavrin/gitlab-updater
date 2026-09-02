@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createExec, MODE, ExecError } from '../src/core/exec.js';
 import { skipList, backupArgv, runBackup, COMPONENTS, MODE as BACKUP, CONFIG_FILES, DEFAULT_DUMP_DIR, parseArchive } from '../src/steps/backup.js';
 import { installArgv, downloadArgv, holdArgv, unholdArgv, updateLists } from '../src/steps/install.js';
-import { waitServices, waitMigrations, MigrationsFailed, rateOf, etaMinutes, MIGRATION_QUERY, parseMigrationCounts } from '../src/steps/settle.js';
+import { waitServices, waitMigrations, MigrationsFailed, rateOf, etaMinutes, MIGRATION_QUERY, parseMigrationCounts, FAILED_MIGRATION_QUERY } from '../src/steps/settle.js';
 import { ctlStatusHealthy, ctlStatusDegraded } from './fixtures/index.js';
 import { execFileSync } from 'node:child_process';
 
@@ -157,11 +157,37 @@ test('ожидание миграций завершается на нуле', a
  * Упавшую миграцию бессмысленно ждать: она не «догонит», а каждая минута
  * ожидания — минута простоя впустую.
  */
-test('упавшая миграция прекращает ожидание немедленно', async () => {
-  let calls = 0;
-  const exec = async () => { calls++; return { code: 0, stdout: '5 1 batched' }; };
-  await assert.rejects(() => waitMigrations({ exec, intervalMs: 60_000, ...clock() }), MigrationsFailed);
-  assert.equal(calls, 1, 'не должны продолжать опрашивать после падения');
+test('упавшая миграция прекращает ожидание немедленно и называет себя', async () => {
+  // Второй запрос — диагностический, за именем упавшей миграции: цифра без
+  // имени не отвечает ни на один вопрос, который в этот момент задают. На
+  // живом сервере путь от «упавших 1» до причины занял три захода.
+  let polls = 0;
+  const exec = async (argv) => {
+    const q = argv.at(-1);
+    if (q === FAILED_MIGRATION_QUERY) {
+      return { code: 0, stdout: 'BackfillSentNotificationsAfterPartition (PG::CheckViolation)\n' };
+    }
+    polls++;
+    return { code: 0, stdout: '5 1 batched' };
+  };
+  const err = await waitMigrations({ exec, intervalMs: 60_000, ...clock() }).then(
+    () => null, (e) => e);
+  assert.ok(err instanceof MigrationsFailed, String(err));
+  assert.equal(polls, 1, 'не должны продолжать опрашивать после падения');
+  assert.equal(err.count, 1);
+  assert.match(err.which, /BackfillSentNotificationsAfterPartition \(PG::CheckViolation\)/);
+});
+
+test('без имени остановка всё равно происходит', async () => {
+  // Диагностика — не условие остановки: если запрос за именем не сработал,
+  // подниматься дальше по-прежнему нельзя.
+  const exec = async (argv) => (argv.at(-1) === FAILED_MIGRATION_QUERY
+    ? { code: 1, stdout: '', stderr: 'boom' }
+    : { code: 0, stdout: '0 2 batched' });
+  const err = await waitMigrations({ exec, intervalMs: 60_000, ...clock() }).then(() => null, (e) => e);
+  assert.ok(err instanceof MigrationsFailed);
+  assert.equal(err.count, 2);
+  assert.equal(err.which, null);
 });
 
 test('неизвестное состояние миграций не считается нулём', async () => {

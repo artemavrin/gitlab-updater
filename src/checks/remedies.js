@@ -71,6 +71,7 @@ export const REMEDIES = {
   'services-unknown.critical': run('ctl-status', ['gitlab-ctl', 'status'], DOCS.services),
 
   'migrations-failed.critical': byVersion(migrationTasks),
+  'migrations-failed-named.critical': byVersion(migrationTasks),
   'migrations-pending.warn': byVersion(migrationTasks),
   'migrations-unknown.warn': run('ctl-status', ['gitlab-ctl', 'status'], DOCS.services),
 
@@ -162,7 +163,7 @@ export const NO_REMEDY = new Set([
 export function remedyFor({ id, level, params = {} }, { version = null } = {}) {
   const found = REMEDIES[`${id}.${level}`];
   if (!found) return null;
-  const spec = found.table ? pick(found.table, version) : found;
+  const spec = found.table ? pick(found.table, rawVersion(version)) : found;
   if (!spec) return null;
   if (!spec.argv) return { id: spec.id, argv: null, flag: spec.flag ?? null, docs: spec.docs };
 
@@ -175,6 +176,25 @@ export function remedyFor({ id, level, params = {} }, { version = null } = {}) {
 }
 
 /** Версия неизвестна — берём самый общий вариант, а не самый новый. */
+/**
+ * Версия строкой, откуда бы её ни передали.
+ *
+ * Ctx держит разобранную версию объектом, а parseVersion принимает строку и
+ * внутри делает String(input) — на объекте это «[object Object]», регулярка не
+ * сходится, и функция честно отвечает null. Дальше pick понимал это как
+ * «версия неизвестна» и отдавал самый общий вариант.
+ *
+ * То есть выбор починки по версии не работал вообще: на любом инстансе, где
+ * версия определилась, человек получал запасной вариант — у нашего это была
+ * ссылка на документацию вместо готовой rake-задачи. Молча, потому что
+ * «неизвестная версия» — законное состояние, и отличить её от испорченной
+ * подстановки было нечем.
+ *
+ * Приводим здесь, в одном месте: так безопасен любой вызывающий, а не только
+ * тот, который сегодня помнит про .raw.
+ */
+const rawVersion = (v) => (typeof v === 'string' ? v : v?.raw ?? null);
+
 function pick(table, version) {
   const have = version ? parseVersion(version) : null;
   if (!have) return table[table.length - 1].spec;

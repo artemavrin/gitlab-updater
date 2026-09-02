@@ -53,6 +53,61 @@ export const MIGRATION_QUERY = [
 ].join('; ');
 
 /**
+ * Имя упавшей миграции и класс её исключения.
+ *
+ * Отдельным запросом, а не внутри MIGRATION_QUERY: тот считает числа на любой
+ * версии и обязан оставаться простым, а этот выполняется только когда упавшие
+ * уже найдены — то есть один раз, на пути к остановке, где цена запроса не
+ * имеет значения.
+ *
+ * Зачем вообще: находка «упавших фоновых миграций 1» верна и бесполезна.
+ * Живой случай на 18.2.8 — чтобы добраться от неё до причины, понадобилось три
+ * захода: rake status, потом запрос в журнал переходов, потом чтение
+ * исходников GitLab. Первые два инструмент может сделать сам, и тогда человек
+ * сразу видит:
+ *
+ *   BackfillSentNotificationsAfterPartition (PG::CheckViolation)
+ *
+ * а не одну лишь цифру.
+ *
+ * Класс исключения лежит в batched_background_migration_job_transition_logs.
+ * Всё, что может отсутствовать на другой версии, обёрнуто: без имени тоже
+ * можно жить, а вот упасть на диагностике по пути к остановке — нельзя.
+ * Сообщение исключения намеренно НЕ берём: в нём бывают значения из данных.
+ *
+ * Сверено по v18.2.8-ee: BatchedJob#batched_job_transition_logs,
+ * BatchedJobTransitionLog#exception_class.
+ */
+export const FAILED_MIGRATION_QUERY = [
+  'begin',
+  ' m = Gitlab::Database::BackgroundMigration::BatchedMigration',
+  ' f = m.respond_to?(:with_status) ? m.with_status(:failed) : m.failed',
+  ' f.first(3).each { |x| e = nil;'
+    + ' begin;'
+    + ' j = x.batched_jobs.with_status(:failed).order(id: :desc).first;'
+    + ' t = j && j.respond_to?(:batched_job_transition_logs) ?'
+    + ' j.batched_job_transition_logs.order(id: :desc).first : nil;'
+    + ' e = t && t.exception_class;'
+    + ' rescue StandardError; end;'
+    + ' puts "#{x.job_class_name}#{e ? " (#{e})" : ""}" }',
+  ' rescue NameError => e; raise if e.is_a?(NoMethodError); end',
+].join(';');
+
+/**
+ * Что из этого можно показать человеку: имена через запятую, или null.
+ * Ошибка запроса — не повод падать: мы уже на пути к остановке, и без имени
+ * остановка всё равно должна произойти.
+ */
+export async function describeFailedMigrations(exec) {
+  const r = await exec(['gitlab-rails', 'runner', '-e', 'production', FAILED_MIGRATION_QUERY], {
+    readOnly: true, allowFailure: true, timeout: 180_000,
+  }).catch(() => null);
+  if (!r || r.code !== 0) return null;
+  const names = String(r.stdout ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+  return names.length ? names.join(', ') : null;
+}
+
+/**
  * Разбор ответа. Возвращает null там, где ответу верить нельзя: «в порядке»
  * по непонятному выводу — худший из возможных ответов в этом месте.
  */
@@ -67,10 +122,13 @@ export function parseMigrationCounts(stdout) {
 }
 
 export class MigrationsFailed extends Error {
-  constructor(count) {
-    super(`${count} batched migration(s) failed`);
+  constructor(count, which = null) {
+    super(`${count} batched migration(s) failed${which ? `: ${which}` : ''}`);
     this.name = 'MigrationsFailed';
     this.count = count;
+    // Имена нужны и на экране остановки, и в уведомлении на телефон: цифра
+    // без имени не отвечает ни на один вопрос, который в этот момент задают.
+    this.which = which;
   }
 }
 
@@ -131,7 +189,7 @@ export async function waitMigrations({
       continue;
     }
     const { queued, failed } = counts;
-    if (failed > 0) throw new MigrationsFailed(failed);
+    if (failed > 0) throw new MigrationsFailed(failed, await describeFailedMigrations(exec));
 
     history.push({ at: now(), queued });
     const rate = rateOf(history);

@@ -8,7 +8,7 @@ import { freeBytes, toGb, GB } from '../detect/disk.js';
 import { postgresRange, pgFloor, osCeiling, comparePg, pgMajor } from '../plan/matrices.js';
 import { parseVersion, compareVersions, withinCeiling } from '../plan/version.js';
 import { remedyFor } from './remedies.js';
-import { MIGRATION_QUERY, parseMigrationCounts } from '../steps/settle.js';
+import { MIGRATION_QUERY, parseMigrationCounts, describeFailedMigrations } from '../steps/settle.js';
 import { errorDetail } from '../core/exec.js';
 
 /**
@@ -140,7 +140,18 @@ export const CHECKS = [
       const { queued, failed } = counts;
       // Упавшая миграция — стоп без вариантов: следующий шаг будет мигрировать
       // поверх незавершённых данных. Этот critical не снимается --force.
-      if (failed > 0) return critical('migrations-failed', { n: failed });
+      //
+      // И называем, ЧТО упало: одна цифра верна и бесполезна. На живом
+      // сервере путь от «упавших 1» до причины занял три захода, из которых
+      // два инструмент делает сам.
+      if (failed > 0) {
+        const which = await describeFailedMigrations(exec);
+        // Две находки, а не одна с пустой подстановкой: «упало (…)» с ничем
+        // внутри читается как недоделка, а текст обязан быть цельным.
+        return which
+          ? critical('migrations-failed-named', { n: failed, detail: which })
+          : critical('migrations-failed', { n: failed });
+      }
       if (queued > 0) return warn('migrations-pending', { n: queued });
       return ok('migrations');
     },

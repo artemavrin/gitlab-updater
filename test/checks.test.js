@@ -10,6 +10,8 @@ import { commandDoctor } from '../src/commands/doctor.js';
 import { LEVEL } from '../src/core/events.js';
 import { COMMANDS } from '../src/cli/registry.js';
 import { EXIT } from '../src/plan/planner.js';
+import { parseVersion } from '../src/plan/version.js';
+import { FAILED_MIGRATION_QUERY } from '../src/steps/settle.js';
 import { checkFixtures, fixturesFor, ctlStatusDegraded, dfTight, osReleaseJammy, osReleaseFocal } from './fixtures/index.js';
 
 const data = {
@@ -151,6 +153,67 @@ test('внешней базе требование остаётся точным
 
   const fine = await runChecks(base({}, { ...pgVersion('14.14'), ...EXTERNAL_PG }), { depth: DEPTH.FULL });
   assert.equal(byId(fine.findings, 'postgres').level, LEVEL.OK);
+});
+
+/**
+ * Имя упавшей миграции в самой находке.
+ *
+ * Живой случай на 18.2.8: находка сказала «упавших 1» и всё. Дорога от неё до
+ * причины — три захода (rake status, запрос в журнал переходов, чтение
+ * исходников GitLab), из которых два инструмент делает сам.
+ */
+test('упавшая миграция называется по имени, а не только числом', async () => {
+  const counts = Object.keys(checkFixtures()).find((k) => k.startsWith('gitlab-rails'));
+  const s = await runChecks(base({}, {
+    [counts]: { code: 0, stdout: '0 1 batched' },
+    [`gitlab-rails runner -e production ${FAILED_MIGRATION_QUERY}`]: {
+      code: 0, stdout: 'BackfillSentNotificationsAfterPartition (PG::CheckViolation)\n',
+    },
+  }));
+  const f = byId(s.findings, 'migrations-failed-named');
+  assert.ok(f, JSON.stringify(s.findings.map((x) => x.id)));
+  assert.equal(f.level, LEVEL.CRITICAL);
+  assert.match(f.params.detail, /BackfillSentNotificationsAfterPartition/);
+  assert.match(f.params.detail, /PG::CheckViolation/);
+  // И починка на месте: находка с новым id не должна её потерять.
+  assert.ok(f.remedy, 'у критической находки обязана быть починка');
+});
+
+/**
+ * Починка выбирается по версии — а версия в ctx лежит РАЗОБРАННЫМ объектом.
+ *
+ * parseVersion принимает строку и делает String(input): на объекте это
+ * «[object Object]», и выбор молча сваливался в самый общий вариант. То есть
+ * на любом инстансе с определённой версией человек получал ссылку на
+ * документацию вместо готовой команды. Ровно это и увидел живой сервер на
+ * 18.2.8.
+ */
+test('версия из ctx доезжает до выбора починки', async () => {
+  const counts = Object.keys(checkFixtures()).find((k) => k.startsWith('gitlab-rails'));
+  const s = await runChecks(base({
+    // Та же форма, что кладёт detectGitlab: объект, а не строка.
+    gitlabInfo: { version: parseVersion('18.2.8-ee.0'), aptVersion: '18.2.8-ee.0' },
+  }, { [counts]: { code: 0, stdout: '0 0 batched' }, ...pgVersion('16.8') }));
+  const f = byId(s.findings, 'migrations');
+  assert.equal(f.level, LEVEL.OK, 'подготовка теста: миграции должны быть в порядке');
+
+  // Сама проверка — на находке, у которой починка зависит от версии.
+  const pending = await runChecks(base({
+    gitlabInfo: { version: parseVersion('18.2.8-ee.0'), aptVersion: '18.2.8-ee.0' },
+  }, { [counts]: { code: 0, stdout: '3 0 batched' } }));
+  const warn = byId(pending.findings, 'migrations-pending');
+  assert.deepEqual(warn.remedy.argv, ['gitlab-rake', 'gitlab:background_migrations:status'],
+    'на 18.2.8 команда есть, и она обязана быть названа');
+});
+
+test('без имени остаётся прежняя находка, а не пустые скобки', async () => {
+  const counts = Object.keys(checkFixtures()).find((k) => k.startsWith('gitlab-rails'));
+  const s = await runChecks(base({}, {
+    [counts]: { code: 0, stdout: '0 1 batched' },
+    [`gitlab-rails runner -e production ${FAILED_MIGRATION_QUERY}`]: { code: 1, stdout: '' },
+  }));
+  assert.equal(byId(s.findings, 'migrations-failed').level, LEVEL.CRITICAL);
+  assert.equal(byId(s.findings, 'migrations-failed-named'), undefined);
 });
 
 test('PostgreSQL выше протестированного максимума — предупреждение, а не остановка', async () => {
