@@ -358,7 +358,6 @@
   "remedy.detach": "run detached so a dropped SSH session does not interrupt it",
   "remedy.title": "What to do",
   "remedy.docs": "details:",
-  "remedy.migrations-list": "list the background migrations and their state",
   "remedy.migrations-docs": "the rake task depends on your version — see the documentation",
   "blockers.title": "The upgrade will not start — {critical} critical",
   "blockers.warnTitle": "There are warnings — {warnings}",

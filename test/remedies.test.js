@@ -49,18 +49,42 @@ test('починка — команда, флаг или документаци�
   }
 });
 
+/**
+ * Порог rake-задачи сверен с исходниками, а не написан по памяти.
+ *
+ * Прошлая версия этого теста закрепляла две мои выдумки: что задачи появились
+ * в 18.5 и что в 18.9 появилась `:list`. Первое отняло у человека рабочую
+ * команду на 18.2.8 — там инструмент отдал только ссылку. Второе хуже:
+ * `:list` не существует ни в одном теге, и на 18.9+ инструмент печатал бы
+ * команду, которая не выполнится.
+ *
+ * Проверено: lib/tasks/gitlab/background_migrations.rake есть с v14.6.0-ee
+ * (в v14.5.4-ee только :finalize, в v14.0.12-ee файла нет), задача :status в
+ * нём с тех же пор и до v18.11.0-ee, а задачи :list нет нигде.
+ */
 test('rake-задача выбирается по версии инстанса', () => {
-  // Задачи появились в 18.5 и переименовались в 18.9. Назвать не ту —
-  // отправить человека выполнять то, чего в его версии нет.
   const f = { id: 'migrations-failed', level: 'critical', params: {} };
-  assert.deepEqual(remedyFor(f, { version: '18.9.1-ee' }).argv,
-    ['gitlab-rake', 'gitlab:background_migrations:list']);
-  assert.deepEqual(remedyFor(f, { version: '18.5.0-ee' }).argv,
-    ['gitlab-rake', 'gitlab:background_migrations:status']);
-  assert.equal(remedyFor(f, { version: '16.11.10-ee' }).argv, null,
-    'до 18.5 документированной команды нет — остаётся документация');
+  const status = ['gitlab-rake', 'gitlab:background_migrations:status'];
+
+  // Та самая версия с живого сервера: команда есть, и она обязана быть названа.
+  assert.deepEqual(remedyFor(f, { version: '18.2.8-ee' }).argv, status);
+  assert.deepEqual(remedyFor(f, { version: '18.11.0-ee' }).argv, status, 'в новых версиях задача та же');
+  assert.deepEqual(remedyFor(f, { version: '14.6.0-ee' }).argv, status, 'нижняя граница включительно');
+
+  assert.equal(remedyFor(f, { version: '14.5.4-ee' }).argv, null,
+    'в 14.5 задачи :status ещё нет — остаётся документация');
   // Версия неизвестна — самый общий вариант, а не самый новый.
   assert.equal(remedyFor(f, {}).argv, null);
+});
+
+test('в починках нет ни одной выдуманной rake-задачи', () => {
+  // Задач в файле ровно две за всю историю: :status и :finalize. Всё, что
+  // инструмент называет, должно быть одной из них — иначе это опять сочинение.
+  const REAL = new Set(['gitlab:background_migrations:status', 'gitlab:background_migrations:finalize']);
+  for (const spec of ALL_SPECS) {
+    const task = spec.argv?.find((a) => a.startsWith('gitlab:background_migrations:'));
+    if (task) assert.ok(REAL.has(task), `задачи ${task} не существует`);
+  }
 });
 
 test('незаполненный плейсхолдер не выдаётся за готовую команду', () => {

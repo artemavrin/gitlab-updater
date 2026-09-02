@@ -30,7 +30,7 @@ function capture(opts = {}) {
 test('блок называет команду починки, а не только диагноз', () => {
   const out = capture();
   assert.match(out, /gitlab-ctl pg-upgrade/);
-  assert.match(out, /gitlab:background_migrations:list/);
+  assert.match(out, /gitlab:background_migrations:status/);
   assert.match(out, /--safe-for-os/);
 });
 

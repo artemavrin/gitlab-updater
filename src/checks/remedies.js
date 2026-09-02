@@ -39,12 +39,28 @@ const DOCS = {
 };
 
 /**
- * Rake-задачи для фоновых миграций появились в 18.5 и переименовались в 18.9.
- * Ниже 18.5 документированной команды нет вовсе — там остаётся документация.
+ * Rake-задача, которая показывает состояние фоновых миграций.
+ *
+ * Здесь было две ошибки сразу, и обе стоили человеку помощи на живом сервере,
+ * где висела одна упавшая миграция на 18.2.8.
+ *
+ * Первая: порог стоял на 18.5, и для 18.2 инструмент отдавал только ссылку на
+ * документацию — при том что команда работает. Проверено по исходникам:
+ * lib/tasks/gitlab/background_migrations.rake есть с тега v14.6.0-ee (в
+ * v14.5.4-ee только :finalize, в v14.0.12-ee файла нет вовсе), и задача
+ * :status в нём с тех же пор по v18.11.0-ee включительно.
+ *
+ * Вторая, хуже: для 18.9+ предлагалась `gitlab:background_migrations:list`.
+ * Такой задачи не существует ни в одном теге — я её выдумал. Совет, который
+ * не выполнится, хуже отсутствия совета, и это правило записано двумя
+ * абзацами выше в этом же файле.
+ *
+ * Задач в файле ровно две и они не менялись: :status и :finalize. :finalize
+ * принимает четыре поля, и взять их можно только из вывода :status — поэтому
+ * починка называет :status, а не :finalize.
  */
 const migrationTasks = [
-  { since: '18.9.0', spec: run('migrations-list', ['gitlab-rake', 'gitlab:background_migrations:list'], DOCS.migrations) },
-  { since: '18.5.0', spec: run('migrations-status', ['gitlab-rake', 'gitlab:background_migrations:status'], DOCS.migrations) },
+  { since: '14.6.0', spec: run('migrations-status', ['gitlab-rake', 'gitlab:background_migrations:status'], DOCS.migrations) },
   { since: null, spec: read('migrations-docs', DOCS.migrations) },
 ];
 
