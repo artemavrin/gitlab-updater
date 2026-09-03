@@ -37,7 +37,7 @@ const base = (over = {}, fixtures = {}) => ({
   minFreeGb: 5,
   safeForOs: false,
   data,
-  os: { id: 'ubuntu', versionId: '22.04', pretty: 'Ubuntu 22.04.4 LTS', supported: true },
+  os: { id: 'ubuntu', versionId: '22.04', codename: 'jammy', pretty: 'Ubuntu 22.04.4 LTS', supported: true },
   plan: { steps: [{ raw: '17.11.6-ee.0' }], target: { major: 17, minor: 11, patch: 6, raw: '17.11.6-ee.0' } },
   ...over,
 });
@@ -192,14 +192,14 @@ test('версия из ctx доезжает до выбора починки', 
   const counts = Object.keys(checkFixtures()).find((k) => k.startsWith('gitlab-rails'));
   const s = await runChecks(base({
     // Та же форма, что кладёт detectGitlab: объект, а не строка.
-    gitlabInfo: { version: parseVersion('18.2.8-ee.0'), aptVersion: '18.2.8-ee.0' },
+    gitlabInfo: { version: parseVersion('18.2.8-ee.0'), aptVersion: '18.2.8-ee.0', package: 'gitlab-ee' },
   }, { [counts]: { code: 0, stdout: '0 0 batched' }, ...pgVersion('16.8') }));
   const f = byId(s.findings, 'migrations');
   assert.equal(f.level, LEVEL.OK, 'подготовка теста: миграции должны быть в порядке');
 
   // Сама проверка — на находке, у которой починка зависит от версии.
   const pending = await runChecks(base({
-    gitlabInfo: { version: parseVersion('18.2.8-ee.0'), aptVersion: '18.2.8-ee.0' },
+    gitlabInfo: { version: parseVersion('18.2.8-ee.0'), aptVersion: '18.2.8-ee.0', package: 'gitlab-ee' },
   }, { [counts]: { code: 0, stdout: '3 0 batched' } }));
   const warn = byId(pending.findings, 'migrations-pending');
   assert.deepEqual(warn.remedy.argv, ['gitlab-rake', 'gitlab:background_migrations:status'],
@@ -221,6 +221,58 @@ test('PostgreSQL выше протестированного максимума 
   const f = byId(s.findings, 'postgres-above');
   assert.equal(f.level, LEVEL.WARN);
   assert.equal(f.params.max, '16');
+});
+
+/**
+ * Репозиторий против ОС.
+ *
+ * После апгрейда дистрибутива строка в sources.list остаётся от прежнего
+ * выпуска, и дальше всё тихо: apt ставит пакеты под старую glibc, потолок
+ * версий не двигается — то есть ради чего ОС обновляли, не случается, — а
+ * план считается по НОВОЙ ОС и обрывается посреди подъёма, когда нужной
+ * версии в старом репозитории нет.
+ */
+const FOCAL_MADISON = `
+   gitlab-ee | 18.11.11-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu focal/main amd64 Packages
+   gitlab-ee | 18.2.8-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu focal/main amd64 Packages
+`;
+
+test('репозиторий от прежнего выпуска ОС — предупреждение', async () => {
+  const s = await runChecks(base({
+    gitlabInfo: { package: 'gitlab-ee', aptVersion: '18.2.8-ee.0' },
+  }, { 'apt-cache madison gitlab-ee': { code: 0, stdout: FOCAL_MADISON } }), { depth: DEPTH.FULL });
+  const f = byId(s.findings, 'apt-suite');
+  assert.equal(f.level, LEVEL.WARN, JSON.stringify(f));
+  assert.equal(f.params.suite, 'focal');
+  assert.equal(f.params.os, 'jammy');
+  assert.ok(f.remedy, 'без починки это просто тревога');
+});
+
+test('совпавший выпуск проверку не трогает', async () => {
+  // Фикстура madison — с jammy, как и ОС в base().
+  const s = await runChecks(base({
+    gitlabInfo: { package: 'gitlab-ee', aptVersion: '18.2.8-ee.0' },
+  }), { depth: DEPTH.FULL });
+  assert.equal(byId(s.findings, 'apt-suite').level, LEVEL.OK);
+});
+
+test('лишний старый репозиторий рядом с нужным не считается ошибкой', async () => {
+  // Репозиториев может быть несколько, и apt возьмёт подходящий.
+  const both = FOCAL_MADISON + '   gitlab-ee | 18.11.11-ee.0 | https://packages.gitlab.com/gitlab/gitlab-ee/ubuntu jammy/main amd64 Packages\n';
+  const s = await runChecks(base({
+    gitlabInfo: { package: 'gitlab-ee', aptVersion: '18.2.8-ee.0' },
+  }, { 'apt-cache madison gitlab-ee': { code: 0, stdout: both } }), { depth: DEPTH.FULL });
+  assert.equal(byId(s.findings, 'apt-suite').level, LEVEL.OK);
+});
+
+test('без кодового имени ОС сверять нечего, и мы молчим', async () => {
+  // Дистрибутив без VERSION_CODENAME: выдумать выпуск здесь нельзя.
+  const s = await runChecks(base({
+    os: { id: 'ubuntu', versionId: '22.04', codename: null, pretty: 'Ubuntu', supported: true },
+    gitlabInfo: { package: 'gitlab-ee', aptVersion: '18.2.8-ee.0' },
+  }, { 'apt-cache madison gitlab-ee': { code: 0, stdout: FOCAL_MADISON } }), { depth: DEPTH.FULL });
+  assert.equal(byId(s.findings, 'apt-suite-unknown').level, LEVEL.OK);
+  assert.equal(byId(s.findings, 'apt-suite'), undefined);
 });
 
 test('потолок ОС предупреждает, а с --safe-for-os молчит', async () => {

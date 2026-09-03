@@ -12,6 +12,11 @@ export function parseOsRelease(text) {
   return {
     id: map.ID.toLowerCase(),
     versionId: map.VERSION_ID ?? null,
+    // Кодовое имя нужно, чтобы сверить ОС с репозиторием: пакеты GitLab
+    // собираются под конкретный выпуск, и после апгрейда ОС строка в
+    // sources.list остаётся от прежнего. VERSION_CODENAME есть у Ubuntu и
+    // Debian; там, где его нет, остаётся null — и проверка молчит, а не врёт.
+    codename: (map.VERSION_CODENAME ?? '').toLowerCase() || null,
     pretty: map.PRETTY_NAME ?? `${map.ID} ${map.VERSION_ID ?? ''}`.trim(),
     supported: ['ubuntu', 'debian'].includes(map.ID.toLowerCase()),
   };

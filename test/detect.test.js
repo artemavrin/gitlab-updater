@@ -5,7 +5,7 @@ import { parseCtlStatus, missingKeyServices, parsePgVersion } from '../src/detec
 import { parseDf, toGb } from '../src/detect/disk.js';
 import { detectGitlab, dpkgQuery, dpkgInstalled } from '../src/detect/gitlab.js';
 import { createExec, MODE } from '../src/core/exec.js';
-import { osReleaseJammy, ctlStatusHealthy, ctlStatusDegraded, dfOutput, fixturesFor } from './fixtures/index.js';
+import { osReleaseJammy, osReleaseFocal, ctlStatusHealthy, ctlStatusDegraded, dfOutput, fixturesFor } from './fixtures/index.js';
 
 test('разбирает /etc/os-release', () => {
   const os = parseOsRelease(osReleaseJammy);
@@ -95,4 +95,17 @@ test('нечитаемое состояние — «неизвестно», а �
     assert.equal(dpkgInstalled(junk), null, `«${junk}» — это не ответ`);
   }
   assert.equal(dpkgInstalled('install  ok   installed'), true, 'лишние пробелы не меняют смысла');
+});
+
+test('кодовое имя выпуска читается из os-release', () => {
+  // По нему сверяется репозиторий с ОС: пакеты GitLab собираются под
+  // конкретный выпуск, и после апгрейда дистрибутива строка репозитория
+  // остаётся от прежнего. Проверять надо сам разбор — тест, который собирает
+  // объект ОС руками, пропустил бы сломанный парсер.
+  assert.equal(parseOsRelease(osReleaseJammy).codename, 'jammy');
+  assert.equal(parseOsRelease(osReleaseFocal).codename, 'focal');
+  // Регистр приводим: в дикой природе встречается и VERSION_CODENAME=Jammy.
+  assert.equal(parseOsRelease('ID=ubuntu\nVERSION_CODENAME="Bookworm"\n').codename, 'bookworm');
+  // Нет строки — null, а не пустая строка: «не знаем» должно быть отличимо.
+  assert.equal(parseOsRelease('ID=ubuntu\nVERSION_ID="22.04"\n').codename, null);
 });

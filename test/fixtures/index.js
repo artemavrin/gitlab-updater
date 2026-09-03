@@ -33,6 +33,7 @@ NAME="Ubuntu"
 VERSION_ID="22.04"
 VERSION="22.04.4 LTS (Jammy Jellyfish)"
 ID=ubuntu
+VERSION_CODENAME=jammy
 ID_LIKE=debian
 `;
 
@@ -40,6 +41,7 @@ export const osReleaseFocal = `PRETTY_NAME="Ubuntu 20.04.6 LTS"
 NAME="Ubuntu"
 VERSION_ID="20.04"
 ID=ubuntu
+VERSION_CODENAME=focal
 `;
 
 /** ОС, у которой потолок действительно режет: для bionic опубликовано до 16.11. */
@@ -84,6 +86,8 @@ export function checkFixtures({ migrations = '0 0 batched', pg = 'psql (PostgreS
     // а проверка «apt свободен» — ровно та, что пропустила чужой apt-get update.
     ...Object.fromEntries(APT_LOCKS.map((path) => [`fuser ${path}`, { code: 1, stdout: '' }])),
     'systemctl is-active apt-daily.timer': { code: 3, stdout: 'inactive' },
+    // Выпуск дистрибутива в третьей колонке — по нему сверяется репозиторий с ОС.
+    'apt-cache madison gitlab-ee': { code: 0, stdout: madison1711 },
     'gitlab-psql --version': { code: 0, stdout: pg },
     // Встроенный PostgreSQL: строки postgresql['enable'] в gitlab.rb нет.
     "grep -E ^\\s*postgresql\\['enable'\\] /etc/gitlab/gitlab.rb": { code: 1, stdout: '' },

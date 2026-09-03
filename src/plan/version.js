@@ -42,13 +42,33 @@ export function compareVersions(a, b) {
 export const sameMinor = (a, b) => a.major === b.major && a.minor === b.minor;
 
 /** Версия из строки `apt-cache madison`: "  gitlab-ee | 17.11.4-ee.0 | https://..." */
+/**
+ * Кодовое имя выпуска из третьей колонки madison.
+ *
+ * Формат: «<url> <suite>/<component> <arch> Packages», где suite — это
+ * jammy, focal, bookworm. Берём токен с «/», который не выглядит как URL.
+ * Не разобрали — null: выдумывать выпуск здесь нельзя, на этом строится
+ * сверка с ОС.
+ */
+export function madisonSuite(column) {
+  for (const token of String(column ?? '').trim().split(/\s+/)) {
+    if (token.includes('://')) continue;
+    const [suite] = token.split('/');
+    if (/^[a-z][a-z0-9-]*$/.test(suite) && suite !== 'Packages') return suite;
+  }
+  return null;
+}
+
 export function parseMadison(stdout) {
   const out = [];
   for (const line of String(stdout).split('\n')) {
     const parts = line.split('|').map((s) => s.trim());
     if (parts.length < 2 || !parts[1]) continue;
     const v = parseVersion(parts[1]);
-    if (v) out.push({ ...v, package: parts[0], aptVersion: parts[1] });
+    // Третья колонка madison — откуда пакет: «https://…/ubuntu jammy/main
+    // amd64 Packages». Кодовое имя оттуда единственный способ узнать, под
+    // какой выпуск собрано то, что apt реально поставит.
+    if (v) out.push({ ...v, package: parts[0], aptVersion: parts[1], suite: madisonSuite(parts[2]) });
   }
   return out.sort(compareVersions);
 }

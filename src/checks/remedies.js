@@ -107,6 +107,11 @@ export const REMEDIES = {
   // называет оба варианта, здесь остаётся документация.
   'rb-smtp-tls-starttls.critical': read('rb-smtp-tls', DOCS.smtp),
 
+  // Репозиторий подключается скриптом packagecloud — это конвейер с pipe в
+  // shell, argv им не выразить. Остаётся документация, и это честнее, чем
+  // выдуманная одиночная команда.
+  'apt-suite.warn': read('repo-suite', DOCS.install),
+
   'os-ceiling.warn': flag('safe-for-os', '--safe-for-os', DOCS.os),
   'session.warn': flag('detach', '--detach'),
   // Своя же команда: она и найдёт chat id, и запишет его.

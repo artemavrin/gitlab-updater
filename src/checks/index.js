@@ -2,6 +2,7 @@ import { LEVEL } from '../core/events.js';
 import { detectServices, detectPostgres, missingKeyServices, parsePgVersion } from '../detect/services.js';
 import { inMultiplexer } from '../detect/session.js';
 import { readSettings, firstConflict } from '../detect/gitlabRb.js';
+import { availableVersions } from '../detect/apt.js';
 import { describeChannels } from '../notify/index.js';
 import { policyFor } from '../plan/planner.js';
 import { freeBytes, toGb, GB } from '../detect/disk.js';
@@ -110,6 +111,36 @@ export const CHECKS = [
       return hit
         ? critical(`rb-${hit.rule.id}`, { step: hit.step, since: hit.rule.since })
         : ok('gitlab-rb');
+    },
+  },
+
+  {
+    id: 'apt-suite',
+    depth: DEPTH.FAST,
+    async run({ exec, os, gitlabInfo }) {
+      // Пакеты GitLab собираются под конкретный выпуск дистрибутива, а строка
+      // в sources.list от апгрейда ОС сама не меняется. Дальше тихо:
+      //
+      // * apt ставит пакеты, собранные под прежний выпуск, с другой glibc;
+      // * потолок версий остаётся прежним — то есть ровно то, ради чего ОС и
+      //   обновляли, не случается, и никто об этом не говорит;
+      // * а план считается по НОВОЙ ОС, у которой потолка нет, и обрывается
+      //   уже посреди подъёма, когда apt не находит нужную версию.
+      //
+      // Кодовое имя берём из третьей колонки madison, а не из файла: важно,
+      // что apt реально выдаёт, а не что где-то написано.
+      const want = os?.codename ?? null;
+      const pkg = gitlabInfo?.package ?? null;
+      if (!want || !pkg) return ok('apt-suite-unknown');
+
+      const { versions } = await availableVersions(exec, pkg);
+      const suites = [...new Set(versions.map((v) => v.suite).filter(Boolean))];
+      if (!suites.length) return ok('apt-suite-unknown');
+      // Совпадение хотя бы одного — уже порядок: репозиториев может быть
+      // несколько, и лишний старый рядом с нужным ничего не ломает.
+      return suites.includes(want)
+        ? ok('apt-suite', { suite: want })
+        : warn('apt-suite', { suite: suites.join(', '), os: want });
     },
   },
 
