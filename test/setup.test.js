@@ -151,6 +151,25 @@ function machineWithOldNodeInPath() {
   return { home, path: `${bin}:/usr/bin:/bin` };
 }
 
+/**
+ * Та же машина, но рабочий Node принадлежит не root.
+ *
+ * Настоящий файл, а не симлинк: chown идёт по ссылке и сменил бы владельца
+ * системного node — этим уже однажды был испорчен контейнер.
+ */
+function machineWithUserOwnedNvmNode() {
+  const { home, path } = machineWithOldNodeInPath();
+  const nvm = join(home, '.nvm/versions/node/v20.19.5/bin/node');
+  rmSync(nvm, { force: true });
+  // Версия заведомо выше всего, что стоит на машине: выбирается самый новый
+  // кандидат, и тест обязан гарантировать, что выберут именно наш — иначе он
+  // проверит системный Node и молча ничего не докажет.
+  writeFileSync(nvm, '#!/bin/sh\ncase "$1" in -p) echo 99 ;; --version) echo v99.0.0 ;; esac\n');
+  chmodSync(nvm, 0o755);
+  chownSync(nvm, 65534, 65534); // nobody:nogroup
+  return { home, path, node: nvm };
+}
+
 test('старый node в PATH не отменяет установку, если рабочий есть рядом', async () => {
   // Раньше установщик просто отказывался: «нужен Node >= 20, установлен
   // v18.17.1» — хотя подходящий интерпретатор на машине был.
@@ -253,10 +272,9 @@ test('под sudo установка доходит до конца, а не о�
   }
 });
 
-test('root предупреждают, если Node лежит в чужом домашнем каталоге', async () => {
-  // root, запускающий интерпретатор из-под чужого uid, отдаёт root любому,
-  // кто может этот файл переписать. Отказывать не за что — админ тут обычно
-  // и есть тот пользователь, — но молчать об этом нельзя.
+test('чужой Node, указанный через --node, ставится с предупреждением', async () => {
+  // Явно названный путь — осознанный выбор: человек этот файл знает и берёт
+  // на себя. Отказывать тут не за что, но и молчать нельзя.
   if (process.getuid?.() !== 0) return; // правило только для root, проверять нечего
   const home = mkdtempSync(join(tmpdir(), 'home-'));
   // Подставной интерпретатор, а не симлинк на настоящий: chown идёт по ссылке
@@ -270,10 +288,44 @@ test('root предупреждают, если Node лежит в чужом д
   try {
     const r = await run('sh', ['setup.sh', '--base-url', `http://127.0.0.1:${port}`, '--dir', dir, '--node', fake],
       { env: { ...process.env, HOME: home, HTTPS_PROXY: '', https_proxy: '' } });
-    assert.ok(existsSync(join(dir, 'gitlab-upgrade')), 'предупреждение не должно отменять установку');
+    assert.ok(existsSync(join(dir, 'gitlab-upgrade')), 'явный выбор не должен отменять установку');
     assert.match(r.stderr, /принадлежит не root/);
-    // Предупреждение без выхода — это просто испуг.
+    // И префикс — не «ошибка:». С одинаковым префиксом у падений и советов
+    // читатель перестаёт различать оба: так и вышло на живой машине.
+    assert.match(r.stderr, /^внимание:/m);
+    assert.ok(!/^ошибка:/m.test(r.stderr), r.stderr);
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Найденный сам собой чужой Node — отказ, а не предупреждение.
+ *
+ * Установщик вписывает интерпретатор в обёртку: значит root будет запускать
+ * файл, переписываемый чужим uid, при каждом запуске и всегда. Предупреждение
+ * здесь не работает — на живой машине его напечатали строкой ниже
+ * «установлено» и с префиксом «ошибка:», как у настоящих отказов, и человек
+ * пошёл выполнять следующую команду.
+ */
+test('чужой Node, найденный сам, отменяет установку', async () => {
+  if (process.getuid?.() !== 0) return; // правило только для root
+  const { home, path } = machineWithUserOwnedNvmNode();
+  const { server, port } = await serve(assets(BUNDLE));
+  const dir = mkdtempSync(join(tmpdir(), 'setup-'));
+  try {
+    const r = await run('sh', ['setup.sh', '--base-url', `http://127.0.0.1:${port}`, '--dir', dir],
+      { env: { ...process.env, HOME: home, PATH: path, HTTPS_PROXY: '', https_proxy: '' } })
+      .then(() => null, (e) => e);
+    assert.ok(r, 'установщик обязан выйти с ошибкой');
+    assert.ok(!existsSync(join(dir, 'gitlab-upgrade')), 'ничего не должно быть установлено');
+    assert.ok(!existsSync(join(dir, 'gitlab-upgrade.mjs')), 'и бандла рядом тоже');
+    assert.match(r.stderr, /принадлежит не root/);
+    // Отказ обязан назвать оба выхода: системный Node и осознанное --node.
     assert.match(r.stderr, /nodejs\.org/);
+    assert.match(r.stderr, /--node/);
   } finally {
     server.close();
     rmSync(dir, { recursive: true, force: true });
